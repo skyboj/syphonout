@@ -45,20 +45,24 @@ targets:
         excludes:
           - App/Info.plist
           - App/SyphonOut.entitlements
+          - Syphon/SyphonOut-Bridging-Header.h
 
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.syphonout.SyphonOut
         INFOPLIST_FILE: SyphonOut/App/Info.plist
         CODE_SIGN_ENTITLEMENTS: SyphonOut/App/SyphonOut.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: SyphonOut/Syphon/SyphonOut-Bridging-Header.h
         FRAMEWORK_SEARCH_PATHS:
           - "$(PROJECT_DIR)/Frameworks"
           - "$(inherited)"
         LD_RUNPATH_SEARCH_PATHS:
           - "@executable_path/../Frameworks"
           - "$(inherited)"
+        # Suppress OpenGL deprecation warnings (Syphon SDK v5 requires OpenGL)
+        GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS: NO
+        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS: NO
 
-    dependencies: []
-      # Uncomment when Syphon.framework is placed in Frameworks/:
-      # - framework: Frameworks/Syphon.framework
-      #   embed: true
+    dependencies:
+      - framework: Frameworks/Syphon.framework
+        embed: true

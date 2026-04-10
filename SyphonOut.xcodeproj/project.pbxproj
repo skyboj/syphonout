@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		27B3932D8450D41C28E714A0 /* SyphonServerDescription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF8E0663495BEC4AA141F4E /* SyphonServerDescription.swift */; };
 		3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */; };
+		3FDD989C8393A85598D1CDBB /* Syphon.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5AD087002342A98E5222E681 /* Syphon.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		450586903B1FA7472B0EE677 /* SyphonServerDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E962FB5A23BDC5FB6C833F27 /* SyphonServerDiscovery.swift */; };
 		45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8942F1931F1F24B069C953E1 /* PreferencesStore.swift */; };
 		4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */; };
@@ -17,27 +18,57 @@
 		663F20F0A4292489EF17DE21 /* OutputMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52CC609C040357E54A20F9D3 /* OutputMode.swift */; };
 		792C02BC21FF6CDCB7A6557A /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918A530650D74F1D310478BC /* MetalRenderer.swift */; };
 		C5A311561CEDE2B8DABD0D24 /* SyphonClientWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602EF6726179619A8AB2E704 /* SyphonClientWrapper.swift */; };
+		D1A46532C858FA3F85165D1F /* SyphonBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 23A2E75BA95D452A2E176E7A /* SyphonBridge.m */; };
 		D50C921050D13023D1306BBF /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 29CFA98667C281D9FA1D66DD /* Shaders.metal */; };
+		D57272473989A2D25ADC58C2 /* Syphon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5AD087002342A98E5222E681 /* Syphon.framework */; };
 		D8F09649437E56A7B6D410C7 /* OutputController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225873E607843CDEE8A5105E /* OutputController.swift */; };
 		DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		8CB47A00B258FE07747C4F21 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				3FDD989C8393A85598D1CDBB /* Syphon.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		225873E607843CDEE8A5105E /* OutputController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputController.swift; sourceTree = "<group>"; };
+		23A2E75BA95D452A2E176E7A /* SyphonBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SyphonBridge.m; sourceTree = "<group>"; };
 		29CFA98667C281D9FA1D66DD /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		52CC609C040357E54A20F9D3 /* OutputMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputMode.swift; sourceTree = "<group>"; };
+		5AD087002342A98E5222E681 /* Syphon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Syphon.framework; path = Frameworks/Syphon.framework; sourceTree = "<group>"; };
 		5AF8E0663495BEC4AA141F4E /* SyphonServerDescription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyphonServerDescription.swift; sourceTree = "<group>"; };
 		602EF6726179619A8AB2E704 /* SyphonClientWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyphonClientWrapper.swift; sourceTree = "<group>"; };
 		694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		8942F1931F1F24B069C953E1 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
 		918A530650D74F1D310478BC /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
+		ADA8CFA0E24F2B8922FCF370 /* SyphonBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SyphonBridge.h; sourceTree = "<group>"; };
 		BC4FDFB5C9BBD09FC2513A4E /* OutputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputManager.swift; sourceTree = "<group>"; };
 		CB1856EF560E4B79BBB5E850 /* SyphonOut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SyphonOut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBuilder.swift; sourceTree = "<group>"; };
 		E962FB5A23BDC5FB6C833F27 /* SyphonServerDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyphonServerDiscovery.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		517B8DA5D99006A2E333B475 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D57272473989A2D25ADC58C2 /* Syphon.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		07F4CE65742967D11ADE84EF /* Resources */ = {
@@ -95,11 +126,21 @@
 		5D2E395FB9D920E946F36074 /* Syphon */ = {
 			isa = PBXGroup;
 			children = (
+				ADA8CFA0E24F2B8922FCF370 /* SyphonBridge.h */,
+				23A2E75BA95D452A2E176E7A /* SyphonBridge.m */,
 				602EF6726179619A8AB2E704 /* SyphonClientWrapper.swift */,
 				5AF8E0663495BEC4AA141F4E /* SyphonServerDescription.swift */,
 				E962FB5A23BDC5FB6C833F27 /* SyphonServerDiscovery.swift */,
 			);
 			path = Syphon;
+			sourceTree = "<group>";
+		};
+		73F982231455DF2882A0BD82 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				5AD087002342A98E5222E681 /* Syphon.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		EDCDD3D240956B7DDA32837E /* Products */ = {
@@ -114,6 +155,7 @@
 			isa = PBXGroup;
 			children = (
 				F9A675941CA4BB60FAEBA0FA /* SyphonOut */,
+				73F982231455DF2882A0BD82 /* Frameworks */,
 				EDCDD3D240956B7DDA32837E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -140,6 +182,8 @@
 			buildConfigurationList = 85E59C72701CFD51BD35FA71 /* Build configuration list for PBXNativeTarget "SyphonOut" */;
 			buildPhases = (
 				6AD4CE1683EB5ECA73F9C6FF /* Sources */,
+				517B8DA5D99006A2E333B475 /* Frameworks */,
+				8CB47A00B258FE07747C4F21 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -200,6 +244,7 @@
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
 				D50C921050D13023D1306BBF /* Shaders.metal in Sources */,
 				62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */,
+				D1A46532C858FA3F85165D1F /* SyphonBridge.m in Sources */,
 				C5A311561CEDE2B8DABD0D24 /* SyphonClientWrapper.swift in Sources */,
 				27B3932D8450D41C28E714A0 /* SyphonServerDescription.swift in Sources */,
 				450586903B1FA7472B0EE677 /* SyphonServerDiscovery.swift in Sources */,
@@ -280,12 +325,15 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = NO;
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Frameworks",
 					"$(inherited)",
+					"\"Frameworks\"",
 				);
+				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				INFOPLIST_FILE = SyphonOut/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"@executable_path/../Frameworks",
@@ -294,6 +342,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.syphonout.SyphonOut;
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Syphon/SyphonOut-Bridging-Header.h";
 			};
 			name = Release;
 		};
@@ -362,12 +411,15 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = NO;
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Frameworks",
 					"$(inherited)",
+					"\"Frameworks\"",
 				);
+				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				INFOPLIST_FILE = SyphonOut/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"@executable_path/../Frameworks",
@@ -376,6 +428,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.syphonout.SyphonOut;
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Syphon/SyphonOut-Bridging-Header.h";
 			};
 			name = Debug;
 		};

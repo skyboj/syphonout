@@ -1,49 +1,40 @@
 import Foundation
 import Combine
 
-/// Discovers available Syphon servers and publishes the live list.
-///
-/// When Syphon.framework is linked, replace the stub body with real
-/// SyphonServerDirectory observation (SyphonServerAnnounceNotification /
-/// SyphonServerRetireNotification).
+/// Discovers available Syphon servers via SyphonServerDirectory and publishes the live list.
 final class SyphonServerDiscovery: ObservableObject {
     @Published private(set) var servers: [SyphonServerDescription] = []
 
-    // MARK: - Syphon Framework integration point
-    //
-    // Replace this stub with:
-    //   import Syphon
-    //   private var directory: SyphonServerDirectory
-    //
-    //   init() {
-    //       directory = SyphonServerDirectory.shared()
-    //       NotificationCenter.default.addObserver(
-    //           self,
-    //           selector: #selector(serversChanged),
-    //           name: NSNotification.Name(rawValue: SyphonServerAnnounceNotification),
-    //           object: nil
-    //       )
-    //       NotificationCenter.default.addObserver(
-    //           self,
-    //           selector: #selector(serversChanged),
-    //           name: NSNotification.Name(rawValue: SyphonServerRetireNotification),
-    //           object: nil
-    //       )
-    //       refresh()
-    //   }
-    //
-    //   @objc private func serversChanged() { refresh() }
-    //
-    //   private func refresh() {
-    //       let raw = directory.servers(matchingName: nil, appName: nil) ?? []
-    //       servers = raw.map { desc in
-    //           SyphonServerDescription(
-    //               id: desc[SyphonServerDescriptionUUIDKey] as? String ?? UUID().uuidString,
-    //               name: desc[SyphonServerDescriptionNameKey] as? String ?? "Unknown",
-    //               appName: desc[SyphonServerDescriptionAppNameKey] as? String ?? "Unknown"
-    //           )
-    //       }
-    //   }
+    private let directory = SyphonServerDirectory.shared()!
 
-    init() {}
+    init() {
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(serversChanged),
+                       name: .SyphonServerAnnounce, object: directory)
+        nc.addObserver(self, selector: #selector(serversChanged),
+                       name: .SyphonServerUpdate, object: directory)
+        nc.addObserver(self, selector: #selector(serversChanged),
+                       name: .SyphonServerRetire, object: directory)
+        refresh()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func serversChanged() {
+        refresh()
+    }
+
+    private func refresh() {
+        let raw = (directory.servers(matchingName: nil, appName: nil) as? [[String: Any]]) ?? []
+        servers = raw.compactMap { dict in
+            guard let id = dict[SyphonServerDescriptionUUIDKey] as? String else { return nil }
+            return SyphonServerDescription(
+                id: id,
+                name: dict[SyphonServerDescriptionNameKey] as? String ?? "Unknown",
+                appName: dict[SyphonServerDescriptionAppNameKey] as? String ?? "Unknown"
+            )
+        }
+    }
 }

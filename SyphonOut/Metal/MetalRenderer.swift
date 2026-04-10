@@ -13,18 +13,26 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private var passthroughPipeline: MTLRenderPipelineState?
     private var crossfadePipeline: MTLRenderPipelineState?
     private var solidColorPipeline: MTLRenderPipelineState?
+    private var smpteBarsPipeline: MTLRenderPipelineState?
 
     // Textures
     private var currentTexture: MTLTexture?
     private var previousTexture: MTLTexture?
     private var frozenTexture: MTLTexture?
 
-    // Crossfade state
+    // Crossfade state (duration driven by PreferencesStore)
     private var crossfadeAlpha: Float = 1.0
     private var isCrossfading: Bool = false
+    private var crossfadeStepPerFrame: Float {
+        // Crossfade duration in seconds → fraction per frame at display refresh rate
+        let fps = Float(mtkView.preferredFramesPerSecond > 0 ? mtkView.preferredFramesPerSecond : 60)
+        let duration = Float(PreferencesStore.shared.crossfadeDuration)
+        return 1.0 / (fps * duration)
+    }
 
-    // Blank mode
+    // Blank mode state
     private var blankColor: SIMD4<Float>?
+    private var showingTestPattern: Bool = false
 
     // Sampler
     private var sampler: MTLSamplerState?
@@ -38,6 +46,10 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         view.enableSetNeedsDisplay = false
         view.colorPixelFormat = .bgra8Unorm
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        // Match output display refresh rate (ProMotion, 60Hz, etc.)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(frame.origin) }) {
+            view.preferredFramesPerSecond = screen.maximumFramesPerSecond
+        }
 
         self.mtkView = view
         super.init()
@@ -79,15 +91,16 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     func showBlank(option: OutputMode.BlankOption) {
+        showingTestPattern = false
         switch option {
         case .black:
             blankColor = SIMD4<Float>(0, 0, 0, 1)
         case .white:
             blankColor = SIMD4<Float>(1, 1, 1, 1)
         case .testPattern:
-            // Rendered as a static color placeholder; real SMPTE bars require
-            // a CPU-generated texture (implement in a follow-up).
-            blankColor = SIMD4<Float>(0.18, 0.18, 0.18, 1)
+            // GPU-generated SMPTE EBU color bars via smpteBarsFragment shader
+            blankColor = nil
+            showingTestPattern = true
         }
         isCrossfading = false
     }
@@ -103,9 +116,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
         else { return }
 
-        // Crossfade alpha ramp: ~6 frames at 60fps → 100ms
+        // Crossfade alpha ramp: duration from PreferencesStore (default 100ms)
         if isCrossfading {
-            crossfadeAlpha += 1.0 / 6.0
+            crossfadeAlpha += crossfadeStepPerFrame
             if crossfadeAlpha >= 1.0 {
                 crossfadeAlpha = 1.0
                 isCrossfading = false
@@ -116,7 +129,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         // Frozen frame overrides live texture
         let displayTexture = frozenTexture ?? currentTexture
 
-        if let color = blankColor {
+        if showingTestPattern {
+            drawTestPattern(encoder: encoder)
+        } else if let color = blankColor {
             drawSolidColor(color, encoder: encoder)
         } else if isCrossfading, let prev = previousTexture, let curr = displayTexture {
             drawCrossfade(from: prev, to: curr, alpha: crossfadeAlpha, encoder: encoder)
@@ -160,6 +175,12 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
     }
 
+    private func drawTestPattern(encoder: MTLRenderCommandEncoder) {
+        guard let pipeline = smpteBarsPipeline else { return }
+        encoder.setRenderPipelineState(pipeline)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+    }
+
     // MARK: - Pipeline setup
 
     private func buildPipelines() {
@@ -170,6 +191,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         passthroughPipeline = makePipeline(vertex: vertex, fragment: library.makeFunction(name: "passthroughFragment")!)
         crossfadePipeline = makePipeline(vertex: vertex, fragment: library.makeFunction(name: "crossfadeFragment")!)
         solidColorPipeline = makePipeline(vertex: vertex, fragment: library.makeFunction(name: "solidColorFragment")!)
+        smpteBarsPipeline = makePipeline(vertex: vertex, fragment: library.makeFunction(name: "smpteBarsFragment")!)
     }
 
     private func makePipeline(vertex: MTLFunction, fragment: MTLFunction) -> MTLRenderPipelineState? {
