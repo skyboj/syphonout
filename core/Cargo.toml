@@ -1,0 +1,29 @@
+[package]
+name = "syphonout_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "syphonout_core"
+crate-type = ["staticlib"]
+
+[dependencies]
+# Metal GPU rendering (Device, CommandQueue, RenderPipeline, Texture, etc.)
+metal = "0.29"
+
+# Objective-C runtime — for CAMetalLayer drawable access via msg_send
+objc2 = "0.5"
+
+# Thread-safe global state
+parking_lot = "0.12"
+
+# C string / type utilities
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.29"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
