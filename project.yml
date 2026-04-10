@@ -1,0 +1,64 @@
+name: SyphonOut
+options:
+  bundleIdPrefix: com.syphonout
+  deploymentTarget:
+    macOS: "12.0"
+  xcodeVersion: "15"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    PRODUCT_NAME: SyphonOut
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "12.0"
+    ARCHS: "arm64 x86_64"
+    ONLY_ACTIVE_ARCH: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+
+targets:
+  SyphonOut:
+    type: application
+    platform: macOS
+    deploymentTarget: "12.0"
+
+    info:
+      path: SyphonOut/App/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleName: SyphonOut
+        CFBundleIdentifier: com.syphonout.SyphonOut
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "12.0"
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+
+    entitlements:
+      path: SyphonOut/App/SyphonOut.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+
+    sources:
+      - path: SyphonOut
+        excludes:
+          - App/Info.plist
+          - App/SyphonOut.entitlements
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.syphonout.SyphonOut
+        INFOPLIST_FILE: SyphonOut/App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SyphonOut/App/SyphonOut.entitlements
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/Frameworks"
+          - "$(inherited)"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "@executable_path/../Frameworks"
+          - "$(inherited)"
+
+    dependencies: []
+      # Uncomment when Syphon.framework is placed in Frameworks/:
+      # - framework: Frameworks/Syphon.framework
+      #   embed: true
