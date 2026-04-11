@@ -88,9 +88,19 @@ extension StatusBarController {
         outputManager.setMode(.freeze, for: output)
     }
 
-    @objc func setModeBlack(_ sender: NSMenuItem) {
+    @objc func setModeBlankBlack(_ sender: NSMenuItem) {
         guard let output = sender.representedObject as? OutputController else { return }
         outputManager.setMode(.blank(.black), for: output)
+    }
+
+    @objc func setModeBlankWhite(_ sender: NSMenuItem) {
+        guard let output = sender.representedObject as? OutputController else { return }
+        outputManager.setMode(.blank(.white), for: output)
+    }
+
+    @objc func setModeBlankTestPattern(_ sender: NSMenuItem) {
+        guard let output = sender.representedObject as? OutputController else { return }
+        outputManager.setMode(.blank(.testPattern), for: output)
     }
 
     @objc func setModeOff(_ sender: NSMenuItem) {

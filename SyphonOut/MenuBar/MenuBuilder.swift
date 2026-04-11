@@ -51,8 +51,31 @@ enum MenuBuilder {
         // Mode radio items
         addModeRadio(to: menu, title: "Signal",  mode: .signal,       current: output.mode, output: output, action: #selector(StatusBarController.setModeSignal(_:)),  delegate: delegate)
         addModeRadio(to: menu, title: "Freeze",  mode: .freeze,       current: output.mode, output: output, action: #selector(StatusBarController.setModeFreeze(_:)),  delegate: delegate)
-        addModeRadio(to: menu, title: "Blank",   mode: .blank(.black), current: output.mode, output: output, action: #selector(StatusBarController.setModeBlack(_:)),  delegate: delegate)
         addModeRadio(to: menu, title: "Off",     mode: .off,          current: output.mode, output: output, action: #selector(StatusBarController.setModeOff(_:)),    delegate: delegate)
+        
+        // Blank submenu with Black/White/TestPattern options
+        let blankMenu = NSMenu()
+        let blankPlugins: [(String, OutputMode.BlankOption, Selector)] = [
+            ("Black", .black, #selector(StatusBarController.setModeBlankBlack(_:))),
+            ("White", .white, #selector(StatusBarController.setModeBlankWhite(_:))),
+            ("Test Pattern", .testPattern, #selector(StatusBarController.setModeBlankTestPattern(_:)))
+        ]
+        var currentBlankOption: OutputMode.BlankOption? = nil
+        if case .blank(let opt) = output.mode { currentBlankOption = opt }
+        for (title, option, action) in blankPlugins {
+            let item = NSMenuItem(title: "    \(title)", action: action, keyEquivalent: "")
+            item.representedObject = output
+            item.target = delegate
+            item.state = (currentBlankOption == option) ? .on : .off
+            blankMenu.addItem(item)
+        }
+        let blankItem = NSMenuItem(title: "Blank", action: nil, keyEquivalent: "")
+        blankItem.submenu = blankMenu
+        // Show checked state if any blank mode is active
+        if case .blank = output.mode {
+            blankItem.state = .on
+        }
+        menu.addItem(blankItem)
 
         // Source dropdown (submenu)
         let sourceMenu = NSMenu()

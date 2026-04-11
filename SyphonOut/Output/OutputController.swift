@@ -54,9 +54,17 @@ final class OutputController {
         }
     }
 
+    /// Switches the Syphon source for this output.
+    /// Works in both Signal (live) and Freeze (background) modes per spec:
+    /// "User can switch Source in the menu — new server begins buffering"
     func switchSource(to server: SyphonServerDescription) {
-        guard case .signal = mode else { return }
-        connectSyphon(server: server)
+        // Allow switching in signal or freeze mode; other modes have no active Syphon connection
+        switch mode {
+        case .signal, .freeze:
+            connectSyphon(server: server)
+        default:
+            return
+        }
     }
 
     // MARK: - Window

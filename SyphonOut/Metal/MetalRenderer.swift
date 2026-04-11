@@ -61,9 +61,38 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     // MARK: - Public API
 
+    /// Updates the current texture and begins a crossfade from the previous frame.
+    /// The previous texture contents are copied to ensure the crossfade shows the old frame.
     func updateTexture(_ texture: MTLTexture) {
-        // Start crossfade: previous = last current, current = new
-        previousTexture = currentTexture
+        // Copy the old current texture to previousTexture (blit copy to preserve contents)
+        if let current = currentTexture,
+           let commandBuffer = commandQueue.makeCommandBuffer(),
+           let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+            
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: current.pixelFormat,
+                width: current.width,
+                height: current.height,
+                mipmapped: false
+            )
+            descriptor.usage = [.shaderRead, .shaderWrite]
+            
+            if let newPrevious = device.makeTexture(descriptor: descriptor) {
+                blitEncoder.copy(from: current, sourceSlice: 0, sourceLevel: 0,
+                                 sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                                 sourceSize: MTLSize(width: current.width, height: current.height, depth: 1),
+                                 to: newPrevious, destinationSlice: 0, destinationLevel: 0,
+                                 destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+                blitEncoder.endEncoding()
+                commandBuffer.commit()
+                previousTexture = newPrevious
+            } else {
+                previousTexture = nil
+            }
+        } else {
+            previousTexture = nil
+        }
+        
         currentTexture = texture
         blankColor = nil
 
@@ -76,8 +105,31 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         }
     }
 
+    /// Creates a copy of the current texture to preserve for freeze mode.
+    /// The copy survives subsequent texture updates.
     func beginFreeze() {
-        frozenTexture = currentTexture
+        guard let current = currentTexture,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else { return }
+        
+        // Create frozen texture with same descriptor
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: current.pixelFormat,
+            width: current.width,
+            height: current.height,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        frozenTexture = device.makeTexture(descriptor: descriptor)
+        
+        // Blit copy current contents to frozen texture
+        blitEncoder.copy(from: current, sourceSlice: 0, sourceLevel: 0,
+                         sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                         sourceSize: MTLSize(width: current.width, height: current.height, depth: 1),
+                         to: frozenTexture!, destinationSlice: 0, destinationLevel: 0,
+                         destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        blitEncoder.endEncoding()
+        commandBuffer.commit()
     }
 
     func endFreeze() {
