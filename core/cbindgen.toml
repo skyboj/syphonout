@@ -10,13 +10,12 @@ rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export]
-# Export all public functions and types with C-compatible names
+# Export C-compatible enums and structs for FFI
 include = [
     "SyphonOutMode",
-    "SyphonOutIconState",
-    "SyphonOutSignalStatus",
+    "SyphonOutIcon",
+    "SyphonOutSignal",
     "SyphonOutServerInfo",
+    "ServerDescription",
 ]
-# By default, cbindgen exports all pub extern "C" functions.
-# We only need to explicitly include the types we want to be exported
-# as structs/enums.
+# All pub extern "C" functions are exported automatically
