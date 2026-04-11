@@ -21,6 +21,7 @@ xcuserdata/
 
 # Build
 build/
+core/target/
 *.o
 *.d
 *.hmap
