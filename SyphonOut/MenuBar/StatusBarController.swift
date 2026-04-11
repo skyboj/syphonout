@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import os.log
 
 /// Owns the NSStatusItem (menu bar icon) and coordinates the menu.
 final class StatusBarController: NSObject, NSMenuDelegate {
@@ -7,12 +8,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let outputManager: OutputManager
     private var cancellables = Set<AnyCancellable>()
     private var globalShortcutMonitor: Any?
+    private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "StatusBarController")
 
     init(outputManager: OutputManager) {
         self.outputManager = outputManager
         super.init()
         
-        print("[SyphonOut Debug] StatusBarController init starting")
+        logger.log("[SyphonOut Debug] StatusBarController init starting")
         
         // Create status bar item
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)

@@ -1,30 +1,32 @@
 import AppKit
+import os.log
 
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private var outputManager: OutputManager?
+    private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("[SyphonOut Debug] applicationDidFinishLaunching START")
+        logger.log("[SyphonOut Debug] applicationDidFinishLaunching START")
         
         // Menu bar only — no Dock icon (enforced by LSUIElement in Info.plist)
         NSApp.setActivationPolicy(.accessory)
-        print("[SyphonOut Debug] Activation policy set to accessory")
+        logger.log("[SyphonOut Debug] Activation policy set to accessory")
 
         let outputManager = OutputManager()
         self.outputManager = outputManager
-        print("[SyphonOut Debug] OutputManager created")
+        logger.log("[SyphonOut Debug] OutputManager created")
 
-        print("[SyphonOut Debug] Creating StatusBarController...")
+        logger.log("[SyphonOut Debug] Creating StatusBarController...")
         let statusBarController = StatusBarController(outputManager: outputManager)
         self.statusBarController = statusBarController
-        print("[SyphonOut Debug] StatusBarController created and stored")
+        logger.log("[SyphonOut Debug] StatusBarController created and stored")
 
         outputManager.start()
-        print("[SyphonOut Debug] OutputManager started")
+        logger.log("[SyphonOut Debug] OutputManager started")
         
-        print("[SyphonOut Debug] applicationDidFinishLaunching COMPLETE")
+        logger.log("[SyphonOut Debug] applicationDidFinishLaunching COMPLETE")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
