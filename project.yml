@@ -26,7 +26,7 @@ targets:
     info:
       path: SyphonOut/App/Info.plist
       properties:
-        LSUIElement: true
+        LSUIElement: false
         CFBundleName: SyphonOut
         CFBundleIdentifier: com.syphonout.SyphonOut
         CFBundleShortVersionString: "1.0.0"
@@ -45,7 +45,19 @@ targets:
         excludes:
           - App/Info.plist
           - App/SyphonOut.entitlements
+          - App/main.m
           - Syphon/SyphonOut-Bridging-Header.h
+          # Deleted legacy files — excluded so xcodegen doesn't warn
+          - Syphon/SyphonBridge.h
+          - Syphon/SyphonBridge.m
+          - Syphon/SyphonClientWrapper.swift
+          - Syphon/SyphonServerDescription.swift
+          - Syphon/SyphonServerDiscovery.swift
+          - Output/OutputController.swift
+          - Output/OutputManager.swift
+          - Output/OutputMode.swift
+          - Metal/MetalRenderer.swift
+      - path: SyphonOut/App/main.m
 
     settings:
       base:
@@ -53,16 +65,34 @@ targets:
         INFOPLIST_FILE: SyphonOut/App/Info.plist
         CODE_SIGN_ENTITLEMENTS: SyphonOut/App/SyphonOut.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: SyphonOut/Syphon/SyphonOut-Bridging-Header.h
-        FRAMEWORK_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/Frameworks"
+        # Library search path for libsyphonout_core.a
+        LIBRARY_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/SyphonOut/Bridging"
           - "$(inherited)"
-        LD_RUNPATH_SEARCH_PATHS:
-          - "@executable_path/../Frameworks"
+        # Link the Rust static library + required system frameworks
+        OTHER_LDFLAGS:
+          - "-lsyphonout_core"
+          - "-lc++"
+          - "-framework Metal"
+          - "-framework CoreVideo"
+          - "-framework IOSurface"
+          - "-framework QuartzCore"
           - "$(inherited)"
-        # Suppress OpenGL deprecation warnings (Syphon SDK v5 requires OpenGL)
+        # No Syphon.framework at compile time — loaded via dlopen at runtime
+        # Suppress OpenGL deprecation (CGLCreateContext for Syphon's internal use)
         GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS: NO
         CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS: NO
 
-    dependencies:
-      - framework: Frameworks/Syphon.framework
-        embed: true
+    preBuildScripts:
+      - name: "Build Rust core (libsyphonout_core.a)"
+        script: |
+          set -e
+          export PATH="$HOME/.cargo/bin:/usr/local/bin:$PATH"
+          cd "$SRCROOT/core"
+          cargo build --release
+          cp -f target/release/libsyphonout_core.a "$SRCROOT/SyphonOut/Bridging/libsyphonout_core.a"
+          echo "✅ libsyphonout_core.a copied to SyphonOut/Bridging/"
+        basedOnDependencyAnalysis: false
+
+    # No framework dependencies — Syphon is dlopen'd, Metal/IOSurface linked via OTHER_LDFLAGS
+    dependencies: []

@@ -2,35 +2,45 @@ import AppKit
 
 /// Builds the NSMenu content dynamically each time the menu opens.
 enum MenuBuilder {
-    static func build(menu: NSMenu, outputManager: OutputManager, delegate: StatusBarController) {
-        // App title (non-clickable header)
+
+    static func build(menu: NSMenu, outputs: [OutputWindowController], delegate: StatusBarController) {
         let header = NSMenuItem(title: "SyphonOut", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
 
-        // Per-display sections
-        for output in outputManager.outputs {
-            addOutputSection(to: menu, output: output, outputManager: outputManager, delegate: delegate)
+        // Collect available servers from Rust
+        let servers = availableServers()
+
+        for output in outputs {
+            addOutputSection(to: menu, output: output, servers: servers, delegate: delegate)
             menu.addItem(.separator())
         }
 
         // Mirror toggle
-        let mirrorTitle = outputManager.mirrorEnabled
-            ? "Mirror: On → \(outputManager.primaryOutput?.displayAlias ?? "Display 1")"
-            : "Mirror all outputs → \(outputManager.primaryOutput?.displayAlias ?? "Display 1") source"
-        let mirrorItem = NSMenuItem(title: mirrorTitle, action: #selector(StatusBarController.toggleMirror(_:)), keyEquivalent: "")
-        mirrorItem.state = outputManager.mirrorEnabled ? .on : .off
+        let mirrorItem = NSMenuItem(
+            title: "Mirror all outputs",
+            action: #selector(StatusBarController.toggleMirror(_:)),
+            keyEquivalent: ""
+        )
         mirrorItem.target = delegate
         menu.addItem(mirrorItem)
 
         menu.addItem(.separator())
 
-        let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(StatusBarController.openPreferences(_:)), keyEquivalent: ",")
+        let prefsItem = NSMenuItem(
+            title: "Preferences…",
+            action: #selector(StatusBarController.openPreferences(_:)),
+            keyEquivalent: ","
+        )
         prefsItem.target = delegate
         menu.addItem(prefsItem)
 
-        let quitItem = NSMenuItem(title: "Quit SyphonOut", action: #selector(StatusBarController.quitApp(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(
+            title: "Quit SyphonOut",
+            action: #selector(StatusBarController.quitApp(_:)),
+            keyEquivalent: "q"
+        )
         quitItem.target = delegate
         menu.addItem(quitItem)
     }
@@ -39,103 +49,106 @@ enum MenuBuilder {
 
     private static func addOutputSection(
         to menu: NSMenu,
-        output: OutputController,
-        outputManager: OutputManager,
+        output: OutputWindowController,
+        servers: [(uuid: String, name: String, appName: String)],
         delegate: StatusBarController
     ) {
-        // Display name
+        // Display name header
         let nameItem = NSMenuItem(title: output.displayAlias, action: nil, keyEquivalent: "")
         nameItem.isEnabled = false
         menu.addItem(nameItem)
 
         // Mode radio items
-        addModeRadio(to: menu, title: "Signal",  mode: .signal,       current: output.mode, output: output, action: #selector(StatusBarController.setModeSignal(_:)),  delegate: delegate)
-        addModeRadio(to: menu, title: "Freeze",  mode: .freeze,       current: output.mode, output: output, action: #selector(StatusBarController.setModeFreeze(_:)),  delegate: delegate)
-        addModeRadio(to: menu, title: "Off",     mode: .off,          current: output.mode, output: output, action: #selector(StatusBarController.setModeOff(_:)),    delegate: delegate)
-        
-        // Blank submenu with Black/White/TestPattern options
-        let blankMenu = NSMenu()
-        let blankPlugins: [(String, OutputMode.BlankOption, Selector)] = [
-            ("Black", .black, #selector(StatusBarController.setModeBlankBlack(_:))),
-            ("White", .white, #selector(StatusBarController.setModeBlankWhite(_:))),
-            ("Test Pattern", .testPattern, #selector(StatusBarController.setModeBlankTestPattern(_:)))
-        ]
-        var currentBlankOption: OutputMode.BlankOption? = nil
-        if case .blank(let opt) = output.mode { currentBlankOption = opt }
-        for (title, option, action) in blankPlugins {
-            let item = NSMenuItem(title: "    \(title)", action: action, keyEquivalent: "")
+
+        for (title, mode, action) in modeItems(delegate: delegate) {
+            let item = NSMenuItem(title: "  \(title)", action: action, keyEquivalent: "")
             item.representedObject = output
             item.target = delegate
-            item.state = (currentBlankOption == option) ? .on : .off
-            blankMenu.addItem(item)
+            menu.addItem(item)
         }
-        let blankItem = NSMenuItem(title: "Blank", action: nil, keyEquivalent: "")
-        blankItem.submenu = blankMenu
-        // Show checked state if any blank mode is active
-        if case .blank = output.mode {
-            blankItem.state = .on
-        }
-        menu.addItem(blankItem)
 
-        // Source dropdown (submenu)
+        // Source submenu
         let sourceMenu = NSMenu()
-        let servers = outputManager.availableServers
-        let selectedServer = outputManager.selectedServer(for: output)
-        let mirrorActive = outputManager.mirrorEnabled
-
         if servers.isEmpty {
-            let emptyItem = NSMenuItem(title: "No Syphon servers found", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            sourceMenu.addItem(emptyItem)
+            let empty = NSMenuItem(title: "No Syphon servers found", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            sourceMenu.addItem(empty)
         } else {
+            // Get currently selected server name for this display
+            let selectedName: String? = {
+                guard let cStr = syphonout_get_selected_server_name(output.displayId) else { return nil }
+                return String(cString: cStr)
+            }()
+
             for server in servers {
+                let displayName = server.appName.isEmpty
+                    ? server.name
+                    : "\(server.appName): \(server.name)"
                 let item = NSMenuItem(
-                    title: server.displayName,
+                    title: displayName,
                     action: #selector(StatusBarController.selectSource(_:)),
                     keyEquivalent: ""
                 )
-                item.representedObject = ["output": output, "server": server] as [String: Any]
-                item.state = (server == selectedServer) ? .on : .off
+                item.representedObject = ["output": output, "uuid": server.uuid] as [String: Any]
                 item.target = delegate
-                item.isEnabled = !mirrorActive
+                item.state = (displayName == selectedName) ? .on : .off
                 sourceMenu.addItem(item)
             }
         }
 
-        let sourceItem = NSMenuItem(title: "Source: \(selectedServer?.displayName ?? "None")", action: nil, keyEquivalent: "")
+        let selectedDisplay: String = {
+            guard let cStr = syphonout_get_selected_server_name(output.displayId) else { return "None" }
+            return String(cString: cStr)
+        }()
+        let sourceItem = NSMenuItem(title: "Source: \(selectedDisplay)", action: nil, keyEquivalent: "")
         sourceItem.submenu = sourceMenu
-        sourceItem.isEnabled = !mirrorActive
         menu.addItem(sourceItem)
 
-        // Status line
-        let statusItem = NSMenuItem(title: "    \(output.signalStatus.description)", action: nil, keyEquivalent: "")
+        // Signal status
+        let signal = syphonout_get_signal_status(output.displayId)
+        let statusText: String
+        switch signal {
+        case SYPHON_OUT_SIGNAL_PRESENT:           statusText = "● Live"
+        case SYPHON_OUT_SIGNAL_NO_SIGNAL:         statusText = "⚠ No Signal"
+        case SYPHON_OUT_SIGNAL_NO_SOURCE_SELECTED: statusText = "○ No Source"
+        default:                                   statusText = "Unknown"
+        }
+        let statusItem = NSMenuItem(title: "  \(statusText)", action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         menu.addItem(statusItem)
     }
 
-    // MARK: - Helpers
+    // MARK: - Mode items
 
-    private static func addModeRadio(
-        to menu: NSMenu,
-        title: String,
-        mode: OutputMode,
-        current: OutputMode,
-        output: OutputController,
-        action: Selector,
-        delegate: StatusBarController
-    ) {
-        let item = NSMenuItem(title: "    \(title)", action: action, keyEquivalent: "")
-        item.representedObject = output
-        item.target = delegate
-        item.state = modesMatch(mode, current) ? .on : .off
-        menu.addItem(item)
+    private static func modeItems(delegate _: StatusBarController) -> [(String, SyphonOutMode, Selector)] {
+        [
+            ("Signal",       SYPHON_OUT_MODE_SIGNAL,             #selector(StatusBarController.setModeSignal(_:))),
+            ("Freeze",       SYPHON_OUT_MODE_FREEZE,             #selector(StatusBarController.setModeFreeze(_:))),
+            ("Blank Black",  SYPHON_OUT_MODE_BLANK_BLACK,        #selector(StatusBarController.setModeBlackBlank(_:))),
+            ("Blank White",  SYPHON_OUT_MODE_BLANK_WHITE,        #selector(StatusBarController.setModeWhiteBlank(_:))),
+            ("Test Pattern", SYPHON_OUT_MODE_BLANK_TEST_PATTERN,  #selector(StatusBarController.setModeTestPattern(_:))),
+            ("Off",          SYPHON_OUT_MODE_OFF,                #selector(StatusBarController.setModeOff(_:))),
+        ]
     }
 
-    private static func modesMatch(_ a: OutputMode, _ b: OutputMode) -> Bool {
-        switch (a, b) {
-        case (.signal, .signal), (.freeze, .freeze), (.off, .off): return true
-        case (.blank, .blank): return true
-        default: return false
+    // MARK: - Server enumeration
+
+    static func availableServers() -> [(uuid: String, name: String, appName: String)] {
+        var result: [(uuid: String, name: String, appName: String)] = []
+        withUnsafeMutablePointer(to: &result) { ptr in
+            syphonout_get_servers({ infoPtr, count, ctx in
+                guard let infoPtr, let ctx else { return }
+                let arr = ctx.assumingMemoryBound(
+                    to: [(uuid: String, name: String, appName: String)].self)
+                for i in 0..<Int(count) {
+                    let info = infoPtr[i]
+                    let uuid    = info.uuid    != nil ? String(cString: info.uuid)     : ""
+                    let name    = info.name    != nil ? String(cString: info.name)     : ""
+                    let appName = info.app_name != nil ? String(cString: info.app_name) : ""
+                    arr.pointee.append((uuid: uuid, name: name, appName: appName))
+                }
+            }, ptr)
         }
+        return result
     }
 }

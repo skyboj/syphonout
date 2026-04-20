@@ -35,6 +35,9 @@ typedef enum SyphonOutSignal {
     SYPHON_OUT_SIGNAL_NO_SOURCE_SELECTED = 2,
 } SyphonOutSignal;
 
+// Owned server description stored inside Rust state.
+typedef struct ServerDescription ServerDescription;
+
 // Server description, passed to Swift callbacks.
 // All pointers are valid only for the duration of the callback invocation.
 typedef struct SyphonOutServerInfo {

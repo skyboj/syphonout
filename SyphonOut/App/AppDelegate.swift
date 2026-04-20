@@ -1,35 +1,62 @@
 import AppKit
 import os.log
 
-@main
+@objc(AppDelegate)
 final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    private var outputs: [OutputWindowController] = []
     private var statusBarController: StatusBarController?
-    private var outputManager: OutputManager?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        logger.log("[SyphonOut Debug] applicationDidFinishLaunching START")
-        
-        // Menu bar only — no Dock icon (enforced by LSUIElement in Info.plist)
         NSApp.setActivationPolicy(.accessory)
-        logger.log("[SyphonOut Debug] Activation policy set to accessory")
 
-        let outputManager = OutputManager()
-        self.outputManager = outputManager
-        logger.log("[SyphonOut Debug] OutputManager created")
+        // 1. Boot Rust core
+        syphonout_core_init()
 
-        logger.log("[SyphonOut Debug] Creating StatusBarController...")
-        let statusBarController = StatusBarController(outputManager: outputManager)
-        self.statusBarController = statusBarController
-        logger.log("[SyphonOut Debug] StatusBarController created and stored")
+        // 2. Load Syphon.framework at runtime and begin server discovery
+        //    (discovery calls syphonout_on_server_announced / syphonout_on_server_retired)
+        SyphonNativeLoad()
+        SyphonNativeStartDiscovery()
 
-        outputManager.start()
-        logger.log("[SyphonOut Debug] OutputManager started")
-        
-        logger.log("[SyphonOut Debug] applicationDidFinishLaunching COMPLETE")
+        // 3. Wire crossfade duration from prefs
+        let ms = PreferencesStore.shared.crossfadeDuration * 1000.0
+        syphonout_set_crossfade_duration_ms(ms)
+
+        // 4. One OutputWindowController per active display
+        for screen in NSScreen.screens {
+            guard let displayId = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            else { continue }
+            let controller = OutputWindowController(display: displayId)
+            outputs.append(controller)
+        }
+
+        // 5. Register server-changed callback so the menu rebuilds on server list changes
+        syphonout_set_server_changed_callback({ _ in
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .syphonServersChanged, object: nil)
+            }
+        }, nil)
+
+        // 6. Menu bar
+        statusBarController = StatusBarController(outputs: outputs)
+
+        logger.info("SyphonOut started — \(self.outputs.count) display(s)")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        SyphonNativeStop()
+        syphonout_core_deinit()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let syphonServersChanged = Notification.Name("SyphonOutServersChanged")
 }

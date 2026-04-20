@@ -1,9 +1,17 @@
+/*
+ SyphonOut-Bridging-Header.h
+ Exposes C/ObjC APIs to Swift.
+
+ Intentionally has NO compile-time dependency on Syphon.framework.
+ Syphon is loaded at runtime via SyphonNative.m (dlopen).
+*/
+
 #import <Cocoa/Cocoa.h>
-#import <OpenGL/OpenGL.h>
-#import <OpenGL/gl.h>
+#import <CoreVideo/CoreVideo.h>
+#import <QuartzCore/CAMetalLayer.h>
 
-// Syphon framework public headers
-#import <Syphon/Syphon.h>
+// Rust core FFI (state machine, Metal renderer, Syphon IOSurface receiver)
+#import "syphonout_core.h"
 
-// Objective-C bridge: handles CGL context lifecycle and GL→Metal pixel upload
-#import "SyphonBridge.h"
+// ObjC runtime Syphon bridge (dlopen-based, no Syphon.framework at link time)
+#import "SyphonNative.h"
