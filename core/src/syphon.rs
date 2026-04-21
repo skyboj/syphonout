@@ -47,3 +47,60 @@ impl SyphonRegistry {
         self.servers.get(uuid).map(|s| s.name.as_str())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn announce_adds_server() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "Main".into(), "OBS".into());
+        assert_eq!(r.server_list().len(), 1);
+        assert_eq!(r.servers["u1"].name, "Main");
+    }
+
+    #[test]
+    fn retire_removes_server() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "Main".into(), "OBS".into());
+        r.retire("u1");
+        assert!(r.servers.is_empty());
+    }
+
+    #[test]
+    fn select_and_retrieve() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "Main".into(), "OBS".into());
+        r.select(1, "u1".into());
+        assert_eq!(r.selected_uuid(1), Some("u1"));
+        assert_eq!(r.selected_server_name(1), Some("Main"));
+    }
+
+    #[test]
+    fn clear_selection() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "Main".into(), "OBS".into());
+        r.select(1, "u1".into());
+        r.clear_selection(1);
+        assert_eq!(r.selected_uuid(1), None);
+    }
+
+    #[test]
+    fn retire_auto_clears_selection() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "Main".into(), "OBS".into());
+        r.select(1, "u1".into());
+        r.retire("u1");
+        assert_eq!(r.selected_uuid(1), None);
+    }
+
+    #[test]
+    fn server_list_returns_all() {
+        let mut r = SyphonRegistry::default();
+        r.announce("u1".into(), "A".into(), "OBS".into());
+        r.announce("u2".into(), "B".into(), "OBS".into());
+        let list = r.server_list();
+        assert_eq!(list.len(), 2);
+    }
+}

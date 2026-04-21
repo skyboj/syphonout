@@ -69,3 +69,52 @@ impl ServerDescription {
         f(&info);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_discriminants_match_c_ffi() {
+        assert_eq!(SyphonOutMode::Signal as u32, 0);
+        assert_eq!(SyphonOutMode::Freeze as u32, 1);
+        assert_eq!(SyphonOutMode::BlankBlack as u32, 2);
+        assert_eq!(SyphonOutMode::BlankWhite as u32, 3);
+        assert_eq!(SyphonOutMode::BlankTestPattern as u32, 4);
+        assert_eq!(SyphonOutMode::Off as u32, 5);
+    }
+
+    #[test]
+    fn icon_discriminants_match_c_ffi() {
+        assert_eq!(SyphonOutIcon::Solid as u32, 0);
+        assert_eq!(SyphonOutIcon::Half as u32, 1);
+        assert_eq!(SyphonOutIcon::Empty as u32, 2);
+    }
+
+    #[test]
+    fn signal_discriminants_match_c_ffi() {
+        assert_eq!(SyphonOutSignal::Present as u32, 0);
+        assert_eq!(SyphonOutSignal::NoSignal as u32, 1);
+        assert_eq!(SyphonOutSignal::NoSourceSelected as u32, 2);
+    }
+
+    #[test]
+    fn server_description_new_and_clone() {
+        let s = ServerDescription::new("uuid-1", "Main", "OBS");
+        assert_eq!(s.uuid, "uuid-1");
+        assert_eq!(s.name, "Main");
+        assert_eq!(s.app_name, "OBS");
+        let cloned = s.clone();
+        assert_eq!(cloned.uuid, "uuid-1");
+    }
+
+    #[test]
+    fn server_description_with_c_repr_non_null_pointers() {
+        let s = ServerDescription::new("abc", "def", "ghi");
+        s.with_c_repr(|info| {
+            assert!(!info.uuid.is_null());
+            assert!(!info.name.is_null());
+            assert!(!info.app_name.is_null());
+        });
+    }
+}

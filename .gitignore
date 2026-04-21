@@ -44,3 +44,5 @@ core/target/
 # Secrets
 env.md
 obs-solink/build/
+obs-solink/tests/test_protocol
+obs-solink/tests/test_shm

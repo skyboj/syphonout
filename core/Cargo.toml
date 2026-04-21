@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "syphonout_core"
-crate-type = ["staticlib"]
+crate-type = ["lib", "staticlib"]
 
 [dependencies]
 # Metal GPU rendering (Device, CommandQueue, RenderPipeline, Texture, etc.)

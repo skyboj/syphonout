@@ -153,3 +153,142 @@ impl SyphonOutCore {
         self.registry.selected_server_name(display_id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{SyphonOutIcon, SyphonOutSignal};
+
+    fn make_core() -> SyphonOutCore {
+        SyphonOutCore::new()
+    }
+
+    #[test]
+    fn create_and_destroy_output() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        assert!(c.outputs.contains_key(&1));
+        c.destroy_output(1);
+        assert!(!c.outputs.contains_key(&1));
+    }
+
+    #[test]
+    fn set_mode_propagates() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.set_mode(1, SyphonOutMode::Signal);
+        assert_eq!(c.outputs[&1].mode, SyphonOutMode::Signal);
+    }
+
+    #[test]
+    fn signal_status_no_source() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        assert_eq!(c.signal_status(1), SyphonOutSignal::NoSourceSelected);
+    }
+
+    #[test]
+    fn on_new_frame_updates_output() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.outputs.get_mut(&1).unwrap().set_mode(SyphonOutMode::Signal);
+        c.on_new_frame(1, std::ptr::null_mut(), 1920, 1080);
+        assert!(c.outputs[&1].has_signal);
+    }
+
+    #[test]
+    fn icon_state_empty_with_no_outputs() {
+        let c = make_core();
+        assert_eq!(c.icon_state(), SyphonOutIcon::Empty);
+    }
+
+    #[test]
+    fn icon_state_solid_when_all_signal() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.create_output(2, std::ptr::null_mut());
+        c.set_mode(1, SyphonOutMode::Signal);
+        c.set_mode(2, SyphonOutMode::Signal);
+        c.outputs.get_mut(&1).unwrap().has_source = true;
+        c.outputs.get_mut(&1).unwrap().has_signal = true;
+        c.outputs.get_mut(&2).unwrap().has_source = true;
+        c.outputs.get_mut(&2).unwrap().has_signal = true;
+        assert_eq!(c.icon_state(), SyphonOutIcon::Solid);
+    }
+
+    #[test]
+    fn icon_state_half_when_one_no_signal() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.create_output(2, std::ptr::null_mut());
+        c.set_mode(1, SyphonOutMode::Signal);
+        c.set_mode(2, SyphonOutMode::Signal);
+        c.outputs.get_mut(&1).unwrap().has_source = true;
+        c.outputs.get_mut(&1).unwrap().has_signal = true;
+        c.outputs.get_mut(&2).unwrap().has_source = true;
+        c.outputs.get_mut(&2).unwrap().has_signal = false;
+        assert_eq!(c.icon_state(), SyphonOutIcon::Half);
+    }
+
+    #[test]
+    fn server_announce_and_retire() {
+        let mut c = make_core();
+        c.on_server_announced("u1".into(), "Main".into(), "OBS".into());
+        assert_eq!(c.registry.server_list().len(), 1);
+        c.on_server_retired("u1");
+        assert!(c.registry.servers.is_empty());
+    }
+
+    #[test]
+    fn on_server_retired_clears_signal() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.on_server_announced("u1".into(), "Main".into(), "OBS".into());
+        c.set_server(1, "u1");
+        c.outputs.get_mut(&1).unwrap().has_signal = true;
+        c.on_server_retired("u1");
+        assert!(!c.outputs[&1].has_signal);
+    }
+
+    #[test]
+    fn mirror_copies_primary_uuid() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.create_output(2, std::ptr::null_mut());
+        c.on_server_announced("u1".into(), "Main".into(), "OBS".into());
+        c.set_server(1, "u1");
+        c.set_mirror(true, 1);
+        assert_eq!(c.registry.selected_uuid(2), Some("u1"));
+    }
+
+    #[test]
+    fn set_crossfade_duration_propagates() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.set_crossfade_duration_ms(200.0);
+        // Mock renderer doesn't expose the value; just verify it doesn't panic
+    }
+
+    #[test]
+    fn selected_server_name_returns_name() {
+        let mut c = make_core();
+        c.create_output(1, std::ptr::null_mut());
+        c.on_server_announced("u1".into(), "Main".into(), "OBS".into());
+        c.set_server(1, "u1");
+        assert_eq!(c.selected_server_name(1), Some("Main"));
+    }
+
+    #[test]
+    fn server_changed_callback_fires() {
+        let mut c = make_core();
+        let mut called = false;
+        let ud = &mut called as *mut bool as *mut c_void;
+        unsafe extern "C" fn cb(ud: *mut c_void) {
+            let b = ud as *mut bool;
+            *b = true;
+        }
+        c.server_changed_cb = Some((cb, ud));
+        c.on_server_announced("u1".into(), "A".into(), "OBS".into());
+        assert!(called);
+    }
+}

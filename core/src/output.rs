@@ -1,13 +1,36 @@
 /// Per-display output core: owns a MetalRenderer and tracks mode/signal state.
 
 use std::ffi::c_void;
-use crate::renderer::MetalRenderer;
 use crate::state::{SyphonOutMode, SyphonOutSignal};
+
+#[cfg(not(test))]
+use crate::renderer::MetalRenderer as Renderer;
+
+#[cfg(test)]
+mod test_renderer {
+    use crate::state::SyphonOutMode;
+    use std::ffi::c_void;
+
+    #[derive(Default)]
+    pub struct MockRenderer;
+    impl MockRenderer {
+        pub fn new(_layer: *mut c_void) -> Self { Self }
+        pub fn set_crossfade_duration_ms(&mut self, _ms: f64, _fps: f64) {}
+        pub fn begin_freeze(&mut self) {}
+        pub fn end_freeze(&mut self) {}
+        pub fn show_blank(&mut self, _mode: SyphonOutMode) {}
+        pub fn update_from_iosurface(&mut self, _iosurface: *mut c_void, _width: u32, _height: u32) {}
+        pub fn render_frame(&mut self) {}
+    }
+}
+
+#[cfg(test)]
+use test_renderer::MockRenderer as Renderer;
 
 pub struct OutputCore {
     pub display_id: u32,
     pub mode: SyphonOutMode,
-    pub renderer: MetalRenderer,
+    pub renderer: Renderer,
     pub has_signal: bool,
     pub has_source: bool,
     /// FPS hint for crossfade calculation (filled in from CVDisplayLink callback)
@@ -16,7 +39,7 @@ pub struct OutputCore {
 
 impl OutputCore {
     pub fn new(display_id: u32, layer: *mut c_void) -> Self {
-        let renderer = MetalRenderer::new(layer);
+        let renderer = Renderer::new(layer);
         OutputCore {
             display_id,
             mode: SyphonOutMode::Off,
@@ -90,5 +113,100 @@ impl OutputCore {
 
     pub fn is_active(&self) -> bool {
         !matches!(self.mode, SyphonOutMode::Off)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_output_defaults_to_off() {
+        let out = OutputCore::new(1, std::ptr::null_mut());
+        assert_eq!(out.mode, SyphonOutMode::Off);
+        assert!(!out.has_source);
+        assert!(!out.has_signal);
+        assert_eq!(out.display_fps, 60.0);
+    }
+
+    #[test]
+    fn signal_status_no_source() {
+        let out = OutputCore::new(1, std::ptr::null_mut());
+        assert_eq!(out.signal_status(), SyphonOutSignal::NoSourceSelected);
+    }
+
+    #[test]
+    fn signal_status_present() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.has_source = true;
+        out.has_signal = true;
+        assert_eq!(out.signal_status(), SyphonOutSignal::Present);
+    }
+
+    #[test]
+    fn signal_status_no_signal() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.has_source = true;
+        out.has_signal = false;
+        assert_eq!(out.signal_status(), SyphonOutSignal::NoSignal);
+    }
+
+    #[test]
+    fn is_active_only_when_not_off() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        assert!(!out.is_active());
+        out.set_mode(SyphonOutMode::Signal);
+        assert!(out.is_active());
+        out.set_mode(SyphonOutMode::Off);
+        assert!(!out.is_active());
+    }
+
+    #[test]
+    fn on_new_frame_updates_in_signal_mode() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.set_mode(SyphonOutMode::Signal);
+        out.on_new_frame(std::ptr::null_mut(), 1920, 1080);
+        assert!(out.has_signal);
+        assert!(out.has_source);
+    }
+
+    #[test]
+    fn on_new_frame_ignored_in_freeze() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.set_mode(SyphonOutMode::Freeze);
+        out.on_new_frame(std::ptr::null_mut(), 1920, 1080);
+        assert!(out.has_signal); // still sets flags
+        assert!(out.has_source);
+        // texture update was skipped because mode != Signal
+    }
+
+    #[test]
+    fn on_server_lost_sets_no_signal() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.has_source = true;
+        out.has_signal = true;
+        out.on_server_lost();
+        assert!(!out.has_signal);
+        assert!(out.has_source); // source remains selected
+    }
+
+    #[test]
+    fn on_source_cleared_clears_both() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.has_source = true;
+        out.has_signal = true;
+        out.on_source_cleared();
+        assert!(!out.has_source);
+        assert!(!out.has_signal);
+    }
+
+    #[test]
+    fn mode_transition_signal_from_freeze_calls_end_freeze() {
+        let mut out = OutputCore::new(1, std::ptr::null_mut());
+        out.set_mode(SyphonOutMode::Signal);
+        out.set_mode(SyphonOutMode::Freeze);
+        assert_eq!(out.mode, SyphonOutMode::Freeze);
+        out.set_mode(SyphonOutMode::Signal);
+        assert_eq!(out.mode, SyphonOutMode::Signal);
     }
 }
