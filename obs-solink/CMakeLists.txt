@@ -73,14 +73,20 @@ target_compile_options(obs-solink PRIVATE
 target_link_options(obs-solink PRIVATE
     "-F${OBS_FRAMEWORKS_DIR}"
     "-framework" "libobs"
+    # obs-frontend-api for OBS_FRONTEND_EVENT_FINISHED_LOADING
+    # The dylib is obs-frontend-api.dylib (symlink to libobs-frontend-api.1.dylib)
+    "${OBS_FRAMEWORKS_DIR}/obs-frontend-api.dylib"
     # rpath so the binary finds libobs at runtime when loaded by OBS
     "-Wl,-rpath,@executable_path/../Frameworks"
     "-Wl,-rpath,${OBS_FRAMEWORKS_DIR}"      # for dev/testing outside OBS
+    # obs-frontend-api library path
+    "-L${OBS_FRAMEWORKS_DIR}"
 )
 
 # ─── System frameworks ────────────────────────────────────────────────────────
 target_link_libraries(obs-solink PRIVATE
     "-framework Foundation"
+    "-framework CoreFoundation"      # CFUUIDCreate for proper UUID generation
     "-framework IOSurface"
     "-framework Metal"
     "-framework QuartzCore"

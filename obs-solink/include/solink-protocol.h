@@ -83,19 +83,31 @@ extern "C" {
 // ─── Shared memory path ─────────────────────────────────────────────────────
 
 /// Maximum length of the shm name including null terminator.
-#define SOLINK_SHM_NAME_MAX 64u
+/// macOS PSHMNAMLEN = 31 (name without leading slash).
+/// Full buffer including slash and NUL: 33 bytes.
+#define SOLINK_SHM_NAME_MAX 33u
 
 /// Build the POSIX shm_open name from a UUID string.
-/// Result example: "/solink-550e8400-e29b-41d4-a716-446655440000"
-/// The leading slash is required by shm_open on macOS.
+/// macOS restricts shm names to 31 chars (without leading slash).
+///
+/// Strategy: "/slnk-" (6 chars) + first 25 chars of UUID = 31 chars + NUL.
+/// Example UUID "422D73FE-0831-441A-A862-0C7605891DC4"
+/// → "/slnk-422D73FE-0831-441A-A862-0" (32 chars total, 31 without slash)
+///
+/// 25 chars of UUID still covers the first 20 hex digits — 80 bits of entropy.
+/// Collision probability on a single machine: negligible.
 static inline void solink_shm_name(const char *uuid,
                                    char out[SOLINK_SHM_NAME_MAX]) {
-    unsigned int i = 0;
-    const char prefix[] = "/solink-";
-    const char *q = prefix;
-    while (*q && i < SOLINK_SHM_NAME_MAX - 1u) out[i++] = *q++;
+    const char prefix[] = "/slnk-";
+    unsigned int i = 0, pi = 0;
+    while (prefix[pi] && i < SOLINK_SHM_NAME_MAX - 1u) out[i++] = prefix[pi++];
+    /* Append exactly 25 chars of UUID (covers all uniqueness we need) */
+    unsigned int uuid_chars = 0;
     const char *p = uuid;
-    while (*p && i < SOLINK_SHM_NAME_MAX - 1u) out[i++] = *p++;
+    while (*p && i < SOLINK_SHM_NAME_MAX - 1u && uuid_chars < 25u) {
+        out[i++] = *p++;
+        uuid_chars++;
+    }
     out[i] = '\0';
 }
 
@@ -153,6 +165,11 @@ typedef struct SOLinkHeader {
 
 _Static_assert(sizeof(SOLinkHeader) == 128,
     "SOLinkHeader must be 128 bytes — check padding if fields change");
+
+/* Verify shm name fits macOS PSHMNAMLEN=31 limit:
+   "/slnk-" (6) + 25 UUID chars + NUL = 32 bytes in buffer, 31 chars after slash. */
+_Static_assert(SOLINK_SHM_NAME_MAX == 33u,
+    "SOLINK_SHM_NAME_MAX must be 33 (32 chars + NUL) to satisfy macOS PSHMNAMLEN=31");
 
 // ─── Liveness timeout ───────────────────────────────────────────────────────
 
