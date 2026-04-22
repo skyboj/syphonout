@@ -131,6 +131,11 @@ void syphonout_output_set_server(uint32_t display_id, const char *server_uuid);
 // Legacy: remove server assignment from a physical output.
 void syphonout_output_clear_server(uint32_t display_id);
 
+// Return the current IOSurface for a Virtual Display, with a +1 CFRetain.
+// Returns NULL if no frame has arrived yet.
+// THE CALLER MUST CFRelease the returned pointer when done.
+void *syphonout_vd_get_iosurface(const char *uuid);
+
 // Legacy: new frame keyed by display_id instead of vd_uuid.
 // Routes to the implicit VD for that display during transition.
 void syphonout_on_new_frame(uint32_t display_id,

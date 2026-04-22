@@ -335,6 +335,17 @@ pub extern "C" fn syphonout_output_clear_server(display_id: u32) {
     core().lock().legacy_clear_server(display_id);
 }
 
+/// Return the current IOSurface for a Virtual Display, with a +1 CFRetain.
+/// Returns NULL if no frame has arrived yet.
+/// THE CALLER MUST CFRelease the returned pointer when done.
+#[no_mangle]
+pub unsafe extern "C" fn syphonout_vd_get_iosurface(
+    uuid: *const libc::c_char,
+) -> *mut c_void {
+    let uuid = CStr::from_ptr(uuid).to_str().unwrap_or("");
+    core().lock().vd_get_iosurface(uuid)
+}
+
 /// Legacy: new frame keyed by display_id instead of vd_uuid.
 /// Routes to the implicit VD for that display during transition.
 #[no_mangle]

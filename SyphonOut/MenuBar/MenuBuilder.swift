@@ -72,6 +72,16 @@ enum MenuBuilder {
         servers: [(uuid: String, name: String, appName: String)],
         delegate: StatusBarController
     ) {
+        // Preview thumbnail (shown above the VD name if a frame is available)
+        if let thumbnail = PreviewRenderer.thumbnail(for: vd.id) {
+            let previewItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            previewItem.isEnabled = false
+            previewItem.image = thumbnail
+            // Indent so the thumbnail aligns with the other indented items
+            previewItem.indentationLevel = 1
+            menu.addItem(previewItem)
+        }
+
         // Name header with mode indicator
         let nameItem = NSMenuItem(
             title: "  \(vd.name) — \(vd.modeDescription)",

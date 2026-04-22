@@ -290,6 +290,24 @@ impl SyphonOutCore {
     // Helpers
     // ═════════════════════════════════════════════════════════════════════════
 
+    /// Return the IOSurface for a VD's current frame, CFRetain'd (+1 for the caller).
+    /// Returns null if no frame has arrived yet.
+    pub fn vd_get_iosurface(&self, uuid: &str) -> *mut c_void {
+        let vd = if let Some(v) = self.virtual_displays.get(uuid) {
+            v
+        } else {
+            return std::ptr::null_mut();
+        };
+        match vd.iosurface {
+            Some(surface) => {
+                extern "C" { fn CFRetain(cf: *const c_void) -> *const c_void; }
+                unsafe { CFRetain(surface); }
+                surface
+            }
+            None => std::ptr::null_mut(),
+        }
+    }
+
     /// Look up the VirtualDisplay currently assigned to a physical output.
     fn physical_output_vd(&self, display_id: u32) -> Option<&VirtualDisplay> {
         // 1. Check explicit assignment
