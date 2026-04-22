@@ -100,13 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = OutputWindowController(display: id)
             outputs.append(controller)
 
-            // Auto-assign the first VD so the new display immediately shows
-            // something (mirrors the startup behaviour in VirtualDisplayManager).
-            if let firstVD = VirtualDisplayManager.shared.displays.first {
-                VirtualDisplayManager.shared.assignPhysical(displayId: id, vdUUID: firstVD.id)
-            }
-
-            logger.info("Display \(id) connected — output added, assigned to first VD")
+            logger.info("Display \(id) connected — output added, unassigned (user picks VD)")
         }
 
         // Sync the updated list into the status bar so menu reflects reality

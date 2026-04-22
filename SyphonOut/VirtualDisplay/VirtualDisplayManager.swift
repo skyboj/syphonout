@@ -142,13 +142,9 @@ final class VirtualDisplayManager: ObservableObject {
     }
 
     private func createDefaultDisplay() {
-        let vd = createDisplay(name: "Main")
-        for screen in NSScreen.screens {
-            guard let displayId = screen.deviceDescription[
-                NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-            else { continue }
-            assignPhysical(displayId: displayId, vdUUID: vd.id)
-        }
+        // Create the default VD but do NOT assign it to any physical output.
+        // The user selects which physical display gets the signal via the menu.
+        createDisplay(name: "Main")
     }
 
     func setSource(vdId: String, sourceUUID: String) {
