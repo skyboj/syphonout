@@ -70,10 +70,25 @@ final class OutputWindowController {
         contentView.layer = layer
         win.contentView = contentView
 
-        win.makeKeyAndOrderFront(nil)
+        // Window starts hidden — shown only when user assigns a VD to this display.
+        // This prevents covering the built-in display with a black overlay by default.
+        win.orderOut(nil)
 
         self.window = win
         self.metalLayer = layer
+    }
+
+    /// Show the output window (call when a VD is assigned to this display).
+    func showOutput() {
+        window?.makeKeyAndOrderFront(nil)
+        if displayLink.map({ !CVDisplayLinkIsRunning($0) }) == true {
+            CVDisplayLinkStart(displayLink!)
+        }
+    }
+
+    /// Hide the output window (call when the VD assignment is removed).
+    func hideOutput() {
+        window?.orderOut(nil)
     }
 
     // MARK: - Rust output registration

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var outputs: [OutputWindowController] = []
     private var statusBarController: StatusBarController?
     private var screenChangeObserver: NSObjectProtocol?
+    private var assignmentObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,9 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             outputs.append(OutputWindowController(display: displayId))
         }
 
-        // 4b. Initialise Virtual Display manager — creates a default VD and
-        //     assigns all current physical outputs to it.
+        // 4b. Initialise Virtual Display manager.
+        //     Shows output windows only for displays that already have a saved assignment.
         _ = VirtualDisplayManager.shared
+        for (displayId, _) in VirtualDisplayManager.shared.assignments {
+            outputs.first(where: { $0.displayId == displayId })?.showOutput()
+        }
 
         // 5. Register server-changed callback so the menu rebuilds on server list changes
         syphonout_set_server_changed_callback({ _ in
@@ -49,7 +53,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 6. Menu bar
         statusBarController = StatusBarController(outputs: outputs)
 
-        // 7. Watch for display connect / disconnect
+        // 7. Show/hide output window when user assigns or unassigns a VD
+        assignmentObserver = NotificationCenter.default.addObserver(
+            forName: .vdAssignmentChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let displayId = note.userInfo?["displayId"] as? CGDirectDisplayID,
+                  let assigned  = note.userInfo?["assigned"]  as? Bool
+            else { return }
+            if let output = self.outputs.first(where: { $0.displayId == displayId }) {
+                assigned ? output.showOutput() : output.hideOutput()
+            }
+        }
+
+        // 8. Watch for display connect / disconnect
         screenChangeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -62,9 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let obs = screenChangeObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
+        if let obs = assignmentObserver  { NotificationCenter.default.removeObserver(obs) }
+        if let obs = screenChangeObserver { NotificationCenter.default.removeObserver(obs) }
         SOLinkClientStop()
         SyphonNativeStop()
         syphonout_core_deinit()
@@ -113,5 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let syphonServersChanged = Notification.Name("SyphonOutServersChanged")
+    static let syphonServersChanged  = Notification.Name("SyphonOutServersChanged")
+    static let vdAssignmentChanged   = Notification.Name("SyphonOutVDAssignmentChanged")
 }

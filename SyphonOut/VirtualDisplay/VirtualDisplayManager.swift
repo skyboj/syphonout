@@ -216,12 +216,22 @@ final class VirtualDisplayManager: ObservableObject {
             syphonout_physical_assign(UInt32(displayId), vdC)
         }
         save()
+        NotificationCenter.default.post(
+            name: .vdAssignmentChanged,
+            object: nil,
+            userInfo: ["displayId": displayId, "assigned": true]
+        )
     }
 
     func unassignPhysical(displayId: CGDirectDisplayID) {
         assignments.removeValue(forKey: displayId)
         syphonout_physical_unassign(UInt32(displayId))
         save()
+        NotificationCenter.default.post(
+            name: .vdAssignmentChanged,
+            object: nil,
+            userInfo: ["displayId": displayId, "assigned": false]
+        )
     }
 
     func assignedVD(for displayId: CGDirectDisplayID) -> VirtualDisplay? {
