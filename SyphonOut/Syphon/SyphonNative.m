@@ -198,25 +198,32 @@ void SyphonNativeStartDiscovery(void) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SyphonNativeSetServer
+// Shared client management
 // ─────────────────────────────────────────────────────────────────────────────
 
-void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
-    if (!gSyphonHandle || !gCGLCtx || !uuid) return;
+/// Create (or replace) a SyphonClient keyed by @p vdUUID, feeding server @p serverUUID.
+static void startClientForVD(NSString *vdUUID, NSString *serverUUID) {
+    if (!gSyphonHandle || !gCGLCtx || !vdUUID || !serverUUID) return;
 
-    NSString *uuidStr = [NSString stringWithUTF8String:uuid];
-    NSString *vdUUID  = [NSString stringWithFormat:@"__display__%u", displayId];
     NSDictionary *desc = nil;
     @synchronized (gServerDescs) {
-        desc = gServerDescs[uuidStr];
+        desc = gServerDescs[serverUUID];
     }
     if (!desc) {
-        NSLog(@"[SyphonNative] Server %@ not in cache — cannot create client", uuidStr);
+        NSLog(@"[SyphonNative] Server %@ not in cache — cannot create client for VD %@",
+              serverUUID, vdUUID);
         return;
     }
 
-    // Tear down existing client for this display
-    SyphonNativeClearServer(displayId);
+    // Tear down any existing client for this VD key first
+    id old = nil;
+    @synchronized (gClients) {
+        old = gClients[vdUUID];
+        [gClients removeObjectForKey:vdUUID];
+    }
+    if (old) {
+        ((void(*)(id, SEL))objc_msgSend)(old, sel_registerName("stop"));
+    }
 
     Class SyphonClientClass = objc_getClass("SyphonClient");
     if (!SyphonClientClass) {
@@ -224,64 +231,49 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
         return;
     }
 
-    // The handler is called on a background thread when a new frame is ready.
-    // We must lock the CGL context before calling newFrameImage.
+    NSString *vdKeyCopy = [vdUUID copy];
     void (^handler)(id client) = ^(id client) {
         CGLLockContext(gCGLCtx);
         id image = ((id(*)(id, SEL))objc_msgSend)(client, sel_registerName("newFrameImage"));
         CGLUnlockContext(gCGLCtx);
-
         if (!image) return;
 
         NSSize size = ((NSSize(*)(id, SEL))objc_msgSend)(image, sel_registerName("textureSize"));
         IOSurfaceRef surface = extractIOSurface(image);
-
         if (surface) {
-            syphonout_on_new_frame_vd(vdUUID.UTF8String,
+            syphonout_on_new_frame_vd(vdKeyCopy.UTF8String,
                                       (void *)surface,
                                       (uint32_t)size.width,
                                       (uint32_t)size.height);
         }
-        // image is +1 retained ("YOU ARE RESPONSIBLE FOR RELEASING THIS OBJECT")
-        // Under ARC, assigning it to a local automatically releases it when scope exits.
-        // Explicit release is not needed under ARC.
-        (void)image; // suppress unused warning; ARC releases at scope exit
+        (void)image; // ARC releases at scope exit
     };
 
-    // SyphonClient: -initWithServerDescription:context:options:newFrameHandler:
     id alloc  = ((id(*)(Class, SEL))objc_msgSend)(SyphonClientClass, sel_registerName("alloc"));
     id client = ((id(*)(id, SEL, NSDictionary *, CGLContextObj, NSDictionary *, id))objc_msgSend)(
         alloc,
         sel_registerName("initWithServerDescription:context:options:newFrameHandler:"),
-        desc,
-        gCGLCtx,
-        nil,
-        handler
+        desc, gCGLCtx, nil, handler
     );
-
     if (!client) {
-        NSLog(@"[SyphonNative] SyphonClient init failed for display %u server %@", displayId, uuidStr);
+        NSLog(@"[SyphonNative] SyphonClient init failed for VD %@ server %@", vdUUID, serverUUID);
         return;
     }
-
     BOOL isValid = ((BOOL(*)(id, SEL))objc_msgSend)(client, sel_registerName("isValid"));
     if (!isValid) {
-        NSLog(@"[SyphonNative] SyphonClient for display %u is not valid", displayId);
+        NSLog(@"[SyphonNative] SyphonClient for VD %@ is not valid", vdUUID);
         return;
     }
 
     @synchronized (gClients) {
         gClients[vdUUID] = client;
     }
-    NSLog(@"[SyphonNative] Created SyphonClient for display %u → server %@", displayId, uuidStr);
+    NSLog(@"[SyphonNative] Created SyphonClient for VD '%@' → server %@", vdUUID, serverUUID);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SyphonNativeClearServer
-// ─────────────────────────────────────────────────────────────────────────────
-
-void SyphonNativeClearServer(uint32_t displayId) {
-    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+/// Stop and remove the SyphonClient keyed by @p vdUUID.
+static void stopClientForVD(NSString *vdUUID) {
+    if (!vdUUID) return;
     id client = nil;
     @synchronized (gClients) {
         client = gClients[vdUUID];
@@ -289,8 +281,34 @@ void SyphonNativeClearServer(uint32_t displayId) {
     }
     if (client) {
         ((void(*)(id, SEL))objc_msgSend)(client, sel_registerName("stop"));
-        NSLog(@"[SyphonNative] Stopped SyphonClient for display %u", displayId);
+        NSLog(@"[SyphonNative] Stopped SyphonClient for VD '%@'", vdUUID);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
+void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
+    if (!uuid) return;
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+    startClientForVD(vdUUID, [NSString stringWithUTF8String:uuid]);
+}
+
+void SyphonNativeClearServer(uint32_t displayId) {
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+    stopClientForVD(vdUUID);
+}
+
+void SyphonNativeSetServerForVD(const char *vdUUID, const char *serverUUID) {
+    if (!vdUUID || !serverUUID) return;
+    startClientForVD([NSString stringWithUTF8String:vdUUID],
+                     [NSString stringWithUTF8String:serverUUID]);
+}
+
+void SyphonNativeClearServerForVD(const char *vdUUID) {
+    if (!vdUUID) return;
+    stopClientForVD([NSString stringWithUTF8String:vdUUID]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

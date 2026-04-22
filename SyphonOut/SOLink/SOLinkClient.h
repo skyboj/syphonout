@@ -34,11 +34,19 @@ void SOLinkClientInit(void);
 void SOLinkClientStartDiscovery(void);
 
 /// Open the shared memory for publisher @p uuid and start polling frames for @p displayId.
-/// @p uuid is the raw UUID from the announce notification (WITHOUT the "solink:" prefix).
+/// @p uuid is the raw UUID (WITHOUT the "solink:" prefix). Legacy path — prefer SetServerForVD.
 void SOLinkClientSetServer(uint32_t displayId, const char *uuid);
 
-/// Stop polling and close shared memory for @p displayId.
+/// Stop polling and close shared memory for @p displayId (legacy path).
 void SOLinkClientClearServer(uint32_t displayId);
+
+/// VD-keyed variant: start polling publisher @p publisherUUID for Virtual Display @p vdUUID.
+/// @p publisherUUID is the raw UUID (WITHOUT the "solink:" prefix).
+/// Frames are delivered via syphonout_on_new_frame_vd(vdUUID, ...).
+void SOLinkClientSetServerForVD(const char *vdUUID, const char *publisherUUID);
+
+/// Stop polling for Virtual Display @p vdUUID.
+void SOLinkClientClearServerForVD(const char *vdUUID);
 
 /// Unregister all observers and clear all subscribers. Call from applicationWillTerminate.
 void SOLinkClientStop(void);

@@ -117,12 +117,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    // MARK: - Batch operations
+    // MARK: - Batch operations (operate on Virtual Displays, not physical outputs)
 
-    func freezeAll()   { outputs.forEach { $0.setMode(SYPHON_OUT_MODE_FREEZE) } }
-    func unfreezeAll() { outputs.forEach { $0.setMode(SYPHON_OUT_MODE_SIGNAL) } }
-    func blankAll()    { outputs.forEach { $0.setMode(SYPHON_OUT_MODE_BLANK_BLACK) } }
-    func restoreAll()  { outputs.forEach { $0.setMode(SYPHON_OUT_MODE_SIGNAL) } }
+    func freezeAll() {
+        VirtualDisplayManager.shared.displays.forEach {
+            VirtualDisplayManager.shared.setMode(vdId: $0.id, mode: SYPHON_OUT_MODE_FREEZE)
+        }
+    }
+    func unfreezeAll() {
+        VirtualDisplayManager.shared.displays.forEach {
+            VirtualDisplayManager.shared.setMode(vdId: $0.id, mode: SYPHON_OUT_MODE_SIGNAL)
+        }
+    }
+    func blankAll() {
+        VirtualDisplayManager.shared.displays.forEach {
+            VirtualDisplayManager.shared.setMode(vdId: $0.id, mode: SYPHON_OUT_MODE_BLANK_BLACK)
+        }
+    }
+    func restoreAll() {
+        VirtualDisplayManager.shared.displays.forEach {
+            VirtualDisplayManager.shared.setMode(vdId: $0.id, mode: SYPHON_OUT_MODE_SIGNAL)
+        }
+    }
 }
 
 // MARK: - Menu action targets
@@ -154,6 +170,59 @@ extension StatusBarController {
               let uuid   = info["uuid"]   as? String
         else { return }
         output.setServer(uuid: uuid)
+    }
+
+    // MARK: - Virtual Display actions
+
+    @objc func createNewVD(_ sender: NSMenuItem) {
+        VirtualDisplayManager.shared.createDisplay()
+    }
+
+    @objc func deleteVD(_ sender: NSMenuItem) {
+        guard let vdId = sender.representedObject as? String else { return }
+        VirtualDisplayManager.shared.destroyDisplay(id: vdId)
+    }
+
+    @objc func setVDMode(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let vdId = info["vdId"] as? String,
+              let modeRaw = info["mode"] as? UInt32,
+              let mode = SyphonOutMode(rawValue: modeRaw)
+        else { return }
+        VirtualDisplayManager.shared.setMode(vdId: vdId, mode: mode)
+    }
+
+    @objc func selectVDSource(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let vdId = info["vdId"] as? String,
+              let uuid = info["uuid"] as? String
+        else { return }
+        if uuid.isEmpty {
+            VirtualDisplayManager.shared.clearSource(vdId: vdId)
+        } else {
+            VirtualDisplayManager.shared.setSource(vdId: vdId, sourceUUID: uuid)
+        }
+    }
+
+    @objc func setVDSize(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let vdId = info["vdId"] as? String,
+              let width = info["width"] as? UInt32,
+              let height = info["height"] as? UInt32
+        else { return }
+        VirtualDisplayManager.shared.setSize(vdId: vdId, width: width, height: height)
+    }
+
+    @objc func assignPhysical(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let displayId = info["displayId"] as? CGDirectDisplayID,
+              let vdId = info["vdId"] as? String
+        else { return }
+        if vdId.isEmpty {
+            VirtualDisplayManager.shared.unassignPhysical(displayId: displayId)
+        } else {
+            VirtualDisplayManager.shared.assignPhysical(displayId: displayId, vdUUID: vdId)
+        }
     }
 
     @objc func toggleMirror(_ sender: NSMenuItem) {

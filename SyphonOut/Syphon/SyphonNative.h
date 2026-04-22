@@ -30,12 +30,19 @@ bool SyphonNativeLoad(void);
 void SyphonNativeStartDiscovery(void);
 
 /// Create (or replace) the SyphonClient for @p displayId using the server
-/// identified by @p uuid (null-terminated UTF-8). Frames are pushed to Rust
-/// via syphonout_on_new_frame() from a Syphon callback thread.
+/// identified by @p uuid. Legacy path — prefer SyphonNativeSetServerForVD.
 void SyphonNativeSetServer(uint32_t displayId, const char *uuid);
 
-/// Tear down and release the SyphonClient for @p displayId.
+/// Tear down and release the SyphonClient for @p displayId (legacy path).
 void SyphonNativeClearServer(uint32_t displayId);
+
+/// VD-keyed variant: create a SyphonClient for Virtual Display @p vdUUID using
+/// the server identified by @p serverUUID. Frames are delivered via
+/// syphonout_on_new_frame_vd(vdUUID, ...).
+void SyphonNativeSetServerForVD(const char *vdUUID, const char *serverUUID);
+
+/// Stop and release the SyphonClient for Virtual Display @p vdUUID.
+void SyphonNativeClearServerForVD(const char *vdUUID);
 
 /// Stop all clients and unregister all notifications. Call from applicationWillTerminate.
 void SyphonNativeStop(void);

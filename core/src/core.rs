@@ -19,6 +19,9 @@ use crate::virtual_display::VirtualDisplay;
 pub struct SyphonOutCore {
     pub virtual_displays: HashMap<String, VirtualDisplay>,
     pub physical_outputs: HashMap<u32, PhysicalOutput>,
+    /// display_id → vd_uuid. When present, the physical output renders that VD.
+    /// When absent, it falls back to the implicit per-display VD.
+    pub physical_assignments: HashMap<u32, String>,
     pub registry: SyphonRegistry,
     pub crossfade_duration_ms: f64,
 
@@ -35,6 +38,7 @@ impl SyphonOutCore {
         SyphonOutCore {
             virtual_displays: HashMap::new(),
             physical_outputs: HashMap::new(),
+            physical_assignments: HashMap::new(),
             registry: SyphonRegistry::default(),
             crossfade_duration_ms: 100.0,
             server_changed_cb: None,
@@ -114,17 +118,12 @@ impl SyphonOutCore {
     }
 
     /// Assign a PhysicalOutput to a VirtualDisplay by UUID.
-    pub fn physical_assign(&mut self, display_id: u32, _vd_uuid: &str) {
-        // Legacy "implicit VD" per display gets wiped when explicit assignment happens.
+    pub fn physical_assign(&mut self, display_id: u32, vd_uuid: &str) {
         if let Some(po) = self.physical_outputs.get_mut(&display_id) {
             po.last_vd_mode = SyphonOutMode::Off;
             po.last_frame_serial = 0;
         }
-        // Store the mapping in a synthetic key within virtual_displays
-        // We use the display_id as a "slot" name for the legacy implicit VD.
-        // Actually, cleaner: just keep the implicit VD around but don't use it.
-        // For now, just mark that this display wants an explicit VD.
-        // We'll use a separate mapping for assignment.
+        self.physical_assignments.insert(display_id, vd_uuid.to_string());
     }
 
     pub fn physical_unassign(&mut self, display_id: u32) {
@@ -132,6 +131,7 @@ impl SyphonOutCore {
             po.last_vd_mode = SyphonOutMode::Off;
             po.last_frame_serial = 0;
         }
+        self.physical_assignments.remove(&display_id);
     }
 
     // Helper: which VD is assigned to a physical output?
@@ -143,9 +143,15 @@ impl SyphonOutCore {
     // ═════════════════════════════════════════════════════════════════════════
 
     pub fn render_frame(&mut self, display_id: u32) {
-        let key = Self::implicit_vd_key(display_id);
+        // Determine which VD to render without borrowing the whole self.
+        let assigned_uuid = self.physical_assignments.get(&display_id).cloned();
         if let Some(po) = self.physical_outputs.get_mut(&display_id) {
-            let vd = self.virtual_displays.get(&key);
+            let vd = assigned_uuid
+                .and_then(|u| self.virtual_displays.get(&u))
+                .or_else(|| {
+                    let key = Self::implicit_vd_key(display_id);
+                    self.virtual_displays.get(&key)
+                });
             po.render_frame(vd);
         }
     }
@@ -286,8 +292,11 @@ impl SyphonOutCore {
 
     /// Look up the VirtualDisplay currently assigned to a physical output.
     fn physical_output_vd(&self, display_id: u32) -> Option<&VirtualDisplay> {
-        // For backward compat, use the implicit VD key.
-        // After Phase 3 Swift migration, this will use a real assignment map.
+        // 1. Check explicit assignment
+        if let Some(vd_uuid) = self.physical_assignments.get(&display_id) {
+            return self.virtual_displays.get(vd_uuid);
+        }
+        // 2. Fall back to implicit per-display VD
         let key = Self::implicit_vd_key(display_id);
         self.virtual_displays.get(&key)
     }

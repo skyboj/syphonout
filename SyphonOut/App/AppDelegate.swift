@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             outputs.append(controller)
         }
 
+        // 4b. Initialise Virtual Display manager — creates a default VD and
+        // assigns all physical outputs to it (mirroring by default).
+        _ = VirtualDisplayManager.shared
+
         // 5. Register server-changed callback so the menu rebuilds on server list changes
         syphonout_set_server_changed_callback({ _ in
             DispatchQueue.main.async {

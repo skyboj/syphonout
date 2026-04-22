@@ -237,30 +237,36 @@ void SOLinkClientStartDiscovery(void) {
     NSLog(@"[SOLinkClient] Sent SOLinkServerEnumerate — waiting for publishers to reply");
 }
 
-void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
-    if (!uuid || !gServers) return;
+// ─── Shared subscription logic ────────────────────────────────────────────────
 
-    NSString *uuidStr = [NSString stringWithUTF8String:uuid];
+/// Open SHM for @p publisherUUID and register a polling subscriber keyed by @p vdUUID.
+/// Any existing subscriber for that vdUUID is stopped first.
+static void startSubscriberForVD(NSString *vdUUID, NSString *publisherUUID) {
+    if (!vdUUID || !publisherUUID || !gServers) return;
+
     NSDictionary *info = nil;
     @synchronized (gServers) {
-        info = gServers[uuidStr];
+        info = gServers[publisherUUID];
     }
-
     if (!info) {
-        NSLog(@"[SOLinkClient] Server %@ not in cache — cannot subscribe", uuidStr);
+        NSLog(@"[SOLinkClient] Server %@ not in cache — cannot subscribe VD %@",
+              publisherUUID, vdUUID);
         return;
     }
 
     NSString *shmName = info[@SOLINK_KEY_SHM_NAME];
     if (!shmName) {
-        NSLog(@"[SOLinkClient] No SHM name in server info for %@", uuidStr);
+        NSLog(@"[SOLinkClient] No SHM name for server %@", publisherUUID);
         return;
     }
 
-    // Tear down existing subscriber for this display
-    SOLinkClientClearServer(displayId);
-
-    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+    // Tear down any existing subscriber for this VD key
+    SOLinkSubscriber *old = nil;
+    @synchronized (gSubscribers) {
+        old = gSubscribers[vdUUID];
+        [gSubscribers removeObjectForKey:vdUUID];
+    }
+    [old stop];
 
     // Open shared memory
     int fd = shm_open(shmName.UTF8String, O_RDONLY, 0);
@@ -268,63 +274,84 @@ void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
         NSLog(@"[SOLinkClient] shm_open('%@') failed: %s", shmName, strerror(errno));
         return;
     }
-
-    SOLinkHeader *hdr = mmap(NULL, sizeof(SOLinkHeader),
-                              PROT_READ, MAP_SHARED, fd, 0);
+    SOLinkHeader *hdr = mmap(NULL, sizeof(SOLinkHeader), PROT_READ, MAP_SHARED, fd, 0);
     if (hdr == MAP_FAILED) {
         NSLog(@"[SOLinkClient] mmap failed: %s", strerror(errno));
         close(fd);
         return;
     }
-
-    // Sanity check
     if (hdr->magic != SOLINK_MAGIC) {
-        NSLog(@"[SOLinkClient] Bad magic in SHM — not a SOLink region");
+        NSLog(@"[SOLinkClient] Bad SHM magic for %@", publisherUUID);
         munmap(hdr, sizeof(SOLinkHeader));
         close(fd);
         return;
     }
 
-    // Build subscriber
     SOLinkSubscriber *sub = [[SOLinkSubscriber alloc] init];
-    sub.displayId         = displayId;
-    sub.publisherUUID     = uuidStr;
+    sub.displayId         = 0;
+    sub.publisherUUID     = publisherUUID;
     sub.vdUUID            = vdUUID;
     sub.header            = hdr;
     sub.shmFd             = fd;
-    sub.lastFrameCounter  = atomic_load(&hdr->frame_counter);  // don't replay old frames
+    sub.lastFrameCounter  = atomic_load(&hdr->frame_counter);
 
     @synchronized (gSubscribers) {
         gSubscribers[vdUUID] = sub;
     }
 
-    // Poll at ~120 Hz on the serial poll queue — well above any display refresh rate.
-    // dispatch_source_timer is low-overhead: no thread per subscriber.
+    // Poll at 125 Hz via dispatch_source_timer — no dedicated thread per subscriber.
     dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, gPollQueue);
-    uint64_t interval = 8 * NSEC_PER_MSEC;  // 8 ms → 125 Hz
+    uint64_t interval = 8 * NSEC_PER_MSEC;
     dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval, NSEC_PER_MSEC);
+    NSString *vdKeyCopy = [vdUUID copy];
     dispatch_source_set_event_handler(timer, ^{
         SOLinkSubscriber *s = nil;
         @synchronized (gSubscribers) {
-            s = gSubscribers[vdUUID];
+            s = gSubscribers[vdKeyCopy];
         }
         if (s) tickSubscriber(s);
     });
     dispatch_resume(timer);
     sub.pollSource = timer;
 
-    NSLog(@"[SOLinkClient] Subscribed display %u → '%@' shm=%@",
-          displayId, uuidStr, shmName);
+    NSLog(@"[SOLinkClient] Subscribed VD '%@' → publisher '%@' shm=%@",
+          vdUUID, publisherUUID, shmName);
 }
 
-void SOLinkClientClearServer(uint32_t displayId) {
-    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+/// Stop and remove the subscriber for @p vdUUID.
+static void stopSubscriberForVD(NSString *vdUUID) {
+    if (!vdUUID) return;
     SOLinkSubscriber *sub = nil;
     @synchronized (gSubscribers) {
         sub = gSubscribers[vdUUID];
         [gSubscribers removeObjectForKey:vdUUID];
     }
     [sub stop];
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
+    if (!uuid) return;
+    NSString *vdUUID      = [NSString stringWithFormat:@"__display__%u", displayId];
+    NSString *publisherUUID = [NSString stringWithUTF8String:uuid];
+    startSubscriberForVD(vdUUID, publisherUUID);
+}
+
+void SOLinkClientClearServer(uint32_t displayId) {
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+    stopSubscriberForVD(vdUUID);
+}
+
+void SOLinkClientSetServerForVD(const char *vdUUID, const char *publisherUUID) {
+    if (!vdUUID || !publisherUUID) return;
+    startSubscriberForVD([NSString stringWithUTF8String:vdUUID],
+                         [NSString stringWithUTF8String:publisherUUID]);
+}
+
+void SOLinkClientClearServerForVD(const char *vdUUID) {
+    if (!vdUUID) return;
+    stopSubscriberForVD([NSString stringWithUTF8String:vdUUID]);
 }
 
 void SOLinkClientStop(void) {
