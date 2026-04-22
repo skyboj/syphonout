@@ -80,7 +80,10 @@ static void render_callback(void *param, uint32_t cx, uint32_t cy)
 
     // Render OBS composite into our IOSurface-backed texture
     gs_set_render_target(target, NULL);
-    gs_clear(GS_CLEAR_COLOR, NULL, 0.0f, 0);
+    // NOTE: device_clear dereferences the vec4 even when only GS_CLEAR_COLOR is
+    // set — passing NULL here causes the SIGSEGV we saw in libobs-opengl.
+    struct vec4 black = {0};
+    gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
     gs_ortho(0.0f, (float)ctx->width,
              0.0f, (float)ctx->height,
              -100.0f, 100.0f);
