@@ -89,6 +89,9 @@ static void render_callback(void *param, uint32_t cx, uint32_t cy)
     gs_set_render_target(NULL, NULL);
     gs_blend_state_pop();
 
+    // Copy rendered pixels from render target → IOSurface
+    solink_pool_copy_to_iosurface(ctx->pool, next_idx);
+
     // Atomically publish the completed frame
     solink_shm_publish_frame(ctx->shm, next_idx);
     ctx->last_write_idx = next_idx;
