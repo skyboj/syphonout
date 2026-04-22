@@ -186,9 +186,9 @@ extension StatusBarController {
     @objc func setVDMode(_ sender: NSMenuItem) {
         guard let info = sender.representedObject as? [String: Any],
               let vdId = info["vdId"] as? String,
-              let modeRaw = info["mode"] as? UInt32,
-              let mode = SyphonOutMode(rawValue: modeRaw)
+              let modeRaw = info["mode"] as? UInt32
         else { return }
+        let mode = SyphonOutMode(rawValue: modeRaw)
         VirtualDisplayManager.shared.setMode(vdId: vdId, mode: mode)
     }
 

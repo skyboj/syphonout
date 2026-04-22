@@ -143,8 +143,4 @@ void syphonout_on_new_frame(uint32_t display_id,
                             uint32_t width,
                             uint32_t height);
 
-extern void CFRetain(void *cf);
-
-extern void CFRelease(void *cf);
-
 #endif  /* SYPHONOUT_CORE_H */
