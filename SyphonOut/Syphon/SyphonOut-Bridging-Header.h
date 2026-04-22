@@ -15,3 +15,6 @@
 
 // ObjC runtime Syphon bridge (dlopen-based, no Syphon.framework at link time)
 #import "SyphonNative.h"
+
+// SOLink subscriber — zero-copy IOSurface frames from OBS obs-solink plugin
+#import "SOLinkClient.h"

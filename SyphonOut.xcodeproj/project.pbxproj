@@ -11,8 +11,10 @@
 		3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */; };
 		45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8942F1931F1F24B069C953E1 /* PreferencesStore.swift */; };
 		4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */; };
+		5B5439D70801FD8FEC97E714 /* libsyphonout_core.a in Resources */ = {isa = PBXBuildFile; fileRef = 2903710A6525AA33741D6B84 /* libsyphonout_core.a */; };
 		615936C80098284B72BD790A /* OutputWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */; };
 		62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */; };
+		76847DE3E573320DB3654628 /* SOLinkClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 6D2E17D479C268B8723504C7 /* SOLinkClient.m */; };
 		CD22C5176CFE384DD5119A7E /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 769488A7B31024CC7CFA777C /* main.m */; };
 		D50C921050D13023D1306BBF /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 29CFA98667C281D9FA1D66DD /* Shaders.metal */; };
 		DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */; };
@@ -20,11 +22,14 @@
 
 /* Begin PBXFileReference section */
 		17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputWindowController.swift; sourceTree = "<group>"; };
+		2903710A6525AA33741D6B84 /* libsyphonout_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libsyphonout_core.a; sourceTree = "<group>"; };
 		29CFA98667C281D9FA1D66DD /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
+		449BA8049EFF6F7C91DEAE71 /* SOLinkClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SOLinkClient.h; sourceTree = "<group>"; };
 		4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		52880DDBD476A623D4A34DC1 /* SyphonNative.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SyphonNative.h; sourceTree = "<group>"; };
 		694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
+		6D2E17D479C268B8723504C7 /* SOLinkClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SOLinkClient.m; sourceTree = "<group>"; };
 		769488A7B31024CC7CFA777C /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		8942F1931F1F24B069C953E1 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
 		8C830C8152F596247813832C /* SyphonNative.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SyphonNative.m; sourceTree = "<group>"; };
@@ -93,9 +98,19 @@
 			path = Syphon;
 			sourceTree = "<group>";
 		};
+		8CD45E12F220F96CD9505BAB /* SOLink */ = {
+			isa = PBXGroup;
+			children = (
+				449BA8049EFF6F7C91DEAE71 /* SOLinkClient.h */,
+				6D2E17D479C268B8723504C7 /* SOLinkClient.m */,
+			);
+			path = SOLink;
+			sourceTree = "<group>";
+		};
 		9A566F36F557814BFF1E6C7D /* Bridging */ = {
 			isa = PBXGroup;
 			children = (
+				2903710A6525AA33741D6B84 /* libsyphonout_core.a */,
 				CA38D4E42749C2BEFF672F60 /* syphonout_core.h */,
 			);
 			path = Bridging;
@@ -127,6 +142,7 @@
 				3328D44ADC0BC3F0C889C44B /* Output */,
 				378E8067EB5B4A5E2AD3EE11 /* Preferences */,
 				07F4CE65742967D11ADE84EF /* Resources */,
+				8CD45E12F220F96CD9505BAB /* SOLink */,
 				5D2E395FB9D920E946F36074 /* Syphon */,
 			);
 			path = SyphonOut;
@@ -141,6 +157,7 @@
 			buildPhases = (
 				4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */,
 				6AD4CE1683EB5ECA73F9C6FF /* Sources */,
+				76DA70469248C0146C755D88 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -186,6 +203,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		76DA70469248C0146C755D88 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5B5439D70801FD8FEC97E714 /* libsyphonout_core.a in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
 		4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -218,6 +246,7 @@
 				615936C80098284B72BD790A /* OutputWindowController.swift in Sources */,
 				45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */,
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
+				76847DE3E573320DB3654628 /* SOLinkClient.m in Sources */,
 				D50C921050D13023D1306BBF /* Shaders.metal in Sources */,
 				62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */,
 				118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */,
@@ -303,6 +332,12 @@
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/SyphonOut/Bridging",
+					"$(PROJECT_DIR)/SyphonOut/Syphon",
+					"$(PROJECT_DIR)/SyphonOut/SOLink",
+					"$(inherited)",
+				);
 				INFOPLIST_FILE = SyphonOut/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -397,6 +432,12 @@
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/SyphonOut/Bridging",
+					"$(PROJECT_DIR)/SyphonOut/Syphon",
+					"$(PROJECT_DIR)/SyphonOut/SOLink",
+					"$(inherited)",
+				);
 				INFOPLIST_FILE = SyphonOut/App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

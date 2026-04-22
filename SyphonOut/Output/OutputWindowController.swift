@@ -94,13 +94,23 @@ final class OutputWindowController {
     func setServer(uuid: String) {
         uuid.withCString { cStr in
             syphonout_output_set_server(displayId, cStr)
-            SyphonNativeSetServer(displayId, cStr)
+        }
+        if uuid.hasPrefix("solink:") {
+            // SOLink server: strip prefix, open SHM, start polling IOSurfaces
+            let rawUUID = String(uuid.dropFirst("solink:".count))
+            rawUUID.withCString { SOLinkClientSetServer(displayId, $0) }
+            SyphonNativeClearServer(displayId)  // make sure Syphon is off
+        } else {
+            // Syphon server: connect via dlopen'd SyphonClient
+            uuid.withCString { SyphonNativeSetServer(displayId, $0) }
+            SOLinkClientClearServer(displayId)  // make sure SOLink is off
         }
     }
 
     func clearServer() {
         syphonout_output_clear_server(displayId)
         SyphonNativeClearServer(displayId)
+        SOLinkClientClearServer(displayId)
     }
 
     // MARK: - CVDisplayLink render loop

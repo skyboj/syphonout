@@ -66,6 +66,11 @@ targets:
         CODE_SIGN_ENTITLEMENTS: SyphonOut/App/SyphonOut.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: SyphonOut/Syphon/SyphonOut-Bridging-Header.h
         # Library search path for libsyphonout_core.a
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/SyphonOut/Bridging"   # syphonout_core.h
+          - "$(PROJECT_DIR)/SyphonOut/Syphon"     # SyphonNative.h
+          - "$(PROJECT_DIR)/SyphonOut/SOLink"     # SOLinkClient.h
+          - "$(inherited)"
         LIBRARY_SEARCH_PATHS:
           - "$(PROJECT_DIR)/SyphonOut/Bridging"
           - "$(inherited)"

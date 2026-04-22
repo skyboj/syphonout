@@ -19,6 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SyphonNativeLoad()
         SyphonNativeStartDiscovery()
 
+        // 2b. SOLink subscriber — discovers OBS obs-solink publishers via
+        //     NSDistributedNotificationCenter. Servers appear in the same
+        //     unified list as Syphon servers, prefixed with "solink:".
+        SOLinkClientInit()
+        SOLinkClientStartDiscovery()
+
         // 3. Wire crossfade duration from prefs
         let ms = PreferencesStore.shared.crossfadeDuration * 1000.0
         syphonout_set_crossfade_duration_ms(ms)
@@ -46,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        SOLinkClientStop()
         SyphonNativeStop()
         syphonout_core_deinit()
     }
