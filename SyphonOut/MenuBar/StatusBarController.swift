@@ -6,7 +6,7 @@ import os.log
 final class StatusBarController: NSObject, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
-    private let outputs: [OutputWindowController]
+    var outputs: [OutputWindowController]
     private var globalShortcutMonitor: Any?
     private var serversChangedObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "StatusBar")

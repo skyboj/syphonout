@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var outputs: [OutputWindowController] = []
     private var statusBarController: StatusBarController?
+    private var screenChangeObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -15,13 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syphonout_core_init()
 
         // 2. Load Syphon.framework at runtime and begin server discovery
-        //    (discovery calls syphonout_on_server_announced / syphonout_on_server_retired)
         SyphonNativeLoad()
         SyphonNativeStartDiscovery()
 
-        // 2b. SOLink subscriber — discovers OBS obs-solink publishers via
-        //     NSDistributedNotificationCenter. Servers appear in the same
-        //     unified list as Syphon servers, prefixed with "solink:".
+        // 2b. SOLink subscriber — discovers OBS obs-solink publishers
         SOLinkClientInit()
         SOLinkClientStartDiscovery()
 
@@ -34,12 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let displayId = screen.deviceDescription[
                 NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
             else { continue }
-            let controller = OutputWindowController(display: displayId)
-            outputs.append(controller)
+            outputs.append(OutputWindowController(display: displayId))
         }
 
         // 4b. Initialise Virtual Display manager — creates a default VD and
-        // assigns all physical outputs to it (mirroring by default).
+        //     assigns all current physical outputs to it.
         _ = VirtualDisplayManager.shared
 
         // 5. Register server-changed callback so the menu rebuilds on server list changes
@@ -52,10 +49,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 6. Menu bar
         statusBarController = StatusBarController(outputs: outputs)
 
+        // 7. Watch for display connect / disconnect
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleScreenChange()
+        }
+
         logger.info("SyphonOut started — \(self.outputs.count) display(s)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let obs = screenChangeObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
         SOLinkClientStop()
         SyphonNativeStop()
         syphonout_core_deinit()
@@ -63,6 +72,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    // MARK: - Screen change handling
+
+    private func handleScreenChange() {
+        let currentIds = Set(outputs.map { $0.displayId })
+        let liveIds: Set<CGDirectDisplayID> = Set(
+            NSScreen.screens.compactMap {
+                $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            }
+        )
+
+        // ── Removed displays ──────────────────────────────────────────────
+        let removedIds = currentIds.subtracting(liveIds)
+        for id in removedIds {
+            // Clean up assignment in VDM before destroying the controller
+            // (deinit stops the DisplayLink and calls syphonout_output_destroy)
+            VirtualDisplayManager.shared.unassignPhysical(displayId: id)
+            outputs.removeAll { $0.displayId == id }
+            logger.info("Display \(id) disconnected — output removed")
+        }
+
+        // ── Added displays ────────────────────────────────────────────────
+        let addedIds = liveIds.subtracting(currentIds)
+        for id in addedIds {
+            let controller = OutputWindowController(display: id)
+            outputs.append(controller)
+
+            // Auto-assign the first VD so the new display immediately shows
+            // something (mirrors the startup behaviour in VirtualDisplayManager).
+            if let firstVD = VirtualDisplayManager.shared.displays.first {
+                VirtualDisplayManager.shared.assignPhysical(displayId: id, vdUUID: firstVD.id)
+            }
+
+            logger.info("Display \(id) connected — output added, assigned to first VD")
+        }
+
+        // Sync the updated list into the status bar so menu reflects reality
+        if !removedIds.isEmpty || !addedIds.isEmpty {
+            statusBarController?.outputs = outputs
+        }
     }
 }
 
