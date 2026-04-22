@@ -44,7 +44,7 @@ static NSString * const kSyphonRetire     = @"SyphonServerRetire";
 static void    *gSyphonHandle  = NULL;   // dlopen handle
 static CGLContextObj gCGLCtx   = NULL;   // shared CGL context for SyphonClient
 static NSMutableDictionary<NSString *, NSDictionary *> *gServerDescs = nil;
-static NSMutableDictionary<NSNumber *, id>             *gClients     = nil;
+static NSMutableDictionary<NSString *, id>             *gClients     = nil;
 static NSMutableArray<id /* NSObjectProtocol */> *gObservers         = nil;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,6 +205,7 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
     if (!gSyphonHandle || !gCGLCtx || !uuid) return;
 
     NSString *uuidStr = [NSString stringWithUTF8String:uuid];
+    NSString *vdUUID  = [NSString stringWithFormat:@"__display__%u", displayId];
     NSDictionary *desc = nil;
     @synchronized (gServerDescs) {
         desc = gServerDescs[uuidStr];
@@ -223,8 +224,6 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
         return;
     }
 
-    uint32_t capturedId = displayId;
-
     // The handler is called on a background thread when a new frame is ready.
     // We must lock the CGL context before calling newFrameImage.
     void (^handler)(id client) = ^(id client) {
@@ -238,10 +237,10 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
         IOSurfaceRef surface = extractIOSurface(image);
 
         if (surface) {
-            syphonout_on_new_frame(capturedId,
-                                   (void *)surface,
-                                   (uint32_t)size.width,
-                                   (uint32_t)size.height);
+            syphonout_on_new_frame_vd(vdUUID.UTF8String,
+                                      (void *)surface,
+                                      (uint32_t)size.width,
+                                      (uint32_t)size.height);
         }
         // image is +1 retained ("YOU ARE RESPONSIBLE FOR RELEASING THIS OBJECT")
         // Under ARC, assigning it to a local automatically releases it when scope exits.
@@ -272,7 +271,7 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
     }
 
     @synchronized (gClients) {
-        gClients[@(displayId)] = client;
+        gClients[vdUUID] = client;
     }
     NSLog(@"[SyphonNative] Created SyphonClient for display %u → server %@", displayId, uuidStr);
 }
@@ -282,10 +281,11 @@ void SyphonNativeSetServer(uint32_t displayId, const char *uuid) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void SyphonNativeClearServer(uint32_t displayId) {
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
     id client = nil;
     @synchronized (gClients) {
-        client = gClients[@(displayId)];
-        [gClients removeObjectForKey:@(displayId)];
+        client = gClients[vdUUID];
+        [gClients removeObjectForKey:vdUUID];
     }
     if (client) {
         ((void(*)(id, SEL))objc_msgSend)(client, sel_registerName("stop"));
@@ -306,12 +306,15 @@ void SyphonNativeStop(void) {
     [gObservers removeAllObjects];
 
     // Stop all active clients
-    NSArray<NSNumber *> *displayIds;
+    NSArray<id> *allClients;
     @synchronized (gClients) {
-        displayIds = [gClients allKeys];
+        allClients = [gClients allValues];
+        [gClients removeAllObjects];
     }
-    for (NSNumber *key in displayIds) {
-        SyphonNativeClearServer((uint32_t)key.unsignedIntegerValue);
+    for (id client in allClients) {
+        if (client) {
+            ((void(*)(id, SEL))objc_msgSend)(client, sel_registerName("stop"));
+        }
     }
 
     // Destroy CGL context

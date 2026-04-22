@@ -57,6 +57,7 @@ typedef struct {
 @interface SOLinkSubscriber : NSObject
 @property (nonatomic, assign) uint32_t      displayId;
 @property (nonatomic, copy)   NSString     *publisherUUID;   // raw UUID, no prefix
+@property (nonatomic, copy)   NSString     *vdUUID;          // implicit VD key
 @property (nonatomic, assign) SOLinkHeader *header;          // mmap pointer, NULL if closed
 @property (nonatomic, assign) int           shmFd;
 @property (nonatomic, assign) uint64_t      lastFrameCounter;
@@ -104,7 +105,7 @@ typedef struct {
 // uuid (no prefix) → announce userInfo dict
 static NSMutableDictionary<NSString *, NSDictionary *> *gServers;
 // displayId → SOLinkSubscriber
-static NSMutableDictionary<NSNumber *, SOLinkSubscriber *> *gSubscribers;
+static NSMutableDictionary<NSString *, SOLinkSubscriber *> *gSubscribers;
 // notification observers (for removeObserver on stop)
 static NSMutableArray<id> *gObservers;
 
@@ -189,10 +190,10 @@ static void tickSubscriber(SOLinkSubscriber *sub) {
     if (!surface) return;
 
     // Hand IOSurface to Rust — it creates a zero-copy MTLTexture internally
-    syphonout_on_new_frame(sub.displayId,
-                           (void *)surface,
-                           hdr->width,
-                           hdr->height);
+    syphonout_on_new_frame_vd(sub.vdUUID.UTF8String,
+                              (void *)surface,
+                              hdr->width,
+                              hdr->height);
 
     // Release our +1 reference (Rust/Metal retains its own)
     CFRelease(surface);
@@ -259,6 +260,8 @@ void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
     // Tear down existing subscriber for this display
     SOLinkClientClearServer(displayId);
 
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
+
     // Open shared memory
     int fd = shm_open(shmName.UTF8String, O_RDONLY, 0);
     if (fd < 0) {
@@ -286,12 +289,13 @@ void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
     SOLinkSubscriber *sub = [[SOLinkSubscriber alloc] init];
     sub.displayId         = displayId;
     sub.publisherUUID     = uuidStr;
+    sub.vdUUID            = vdUUID;
     sub.header            = hdr;
     sub.shmFd             = fd;
     sub.lastFrameCounter  = atomic_load(&hdr->frame_counter);  // don't replay old frames
 
     @synchronized (gSubscribers) {
-        gSubscribers[@(displayId)] = sub;
+        gSubscribers[vdUUID] = sub;
     }
 
     // Poll at ~120 Hz on the serial poll queue — well above any display refresh rate.
@@ -302,7 +306,7 @@ void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
     dispatch_source_set_event_handler(timer, ^{
         SOLinkSubscriber *s = nil;
         @synchronized (gSubscribers) {
-            s = gSubscribers[@(displayId)];
+            s = gSubscribers[vdUUID];
         }
         if (s) tickSubscriber(s);
     });
@@ -314,10 +318,11 @@ void SOLinkClientSetServer(uint32_t displayId, const char *uuid) {
 }
 
 void SOLinkClientClearServer(uint32_t displayId) {
+    NSString *vdUUID = [NSString stringWithFormat:@"__display__%u", displayId];
     SOLinkSubscriber *sub = nil;
     @synchronized (gSubscribers) {
-        sub = gSubscribers[@(displayId)];
-        [gSubscribers removeObjectForKey:@(displayId)];
+        sub = gSubscribers[vdUUID];
+        [gSubscribers removeObjectForKey:vdUUID];
     }
     [sub stop];
 }
@@ -331,12 +336,13 @@ void SOLinkClientStop(void) {
     [gObservers removeAllObjects];
 
     // Stop all active subscribers
-    NSArray<NSNumber *> *displayIds;
+    NSArray<SOLinkSubscriber *> *allSubs;
     @synchronized (gSubscribers) {
-        displayIds = [gSubscribers allKeys];
+        allSubs = [gSubscribers allValues];
+        [gSubscribers removeAllObjects];
     }
-    for (NSNumber *key in displayIds) {
-        SOLinkClientClearServer(key.unsignedIntValue);
+    for (SOLinkSubscriber *sub in allSubs) {
+        [sub stop];
     }
 
     NSLog(@"[SOLinkClient] Stopped.");

@@ -52,6 +52,20 @@ void syphonout_core_init(void);
 // Tear down the core (call from applicationWillTerminate).
 void syphonout_core_deinit(void);
 
+void syphonout_vd_create(const char *uuid, const char *name, uint32_t width, uint32_t height);
+
+void syphonout_vd_destroy(const char *uuid);
+
+void syphonout_vd_set_size(const char *uuid, uint32_t width, uint32_t height);
+
+void syphonout_vd_set_name(const char *uuid, const char *name);
+
+void syphonout_vd_set_mode(const char *uuid, enum SyphonOutMode mode);
+
+void syphonout_vd_set_source(const char *uuid, const char *source_uuid);
+
+void syphonout_vd_clear_source(const char *uuid);
+
 // Create a Metal-backed output for `display_id`.
 // `ca_metal_layer_ptr` is the raw `CAMetalLayer *` created by Swift.
 void syphonout_output_create(uint32_t display_id, void *ca_metal_layer_ptr);
@@ -59,42 +73,45 @@ void syphonout_output_create(uint32_t display_id, void *ca_metal_layer_ptr);
 // Remove an output (call when a display is disconnected).
 void syphonout_output_destroy(uint32_t display_id);
 
-// Transition an output to a new mode.
-void syphonout_output_set_mode(uint32_t display_id, enum SyphonOutMode mode);
+// Assign a physical output to a VirtualDisplay.
+void syphonout_physical_assign(uint32_t display_id, const char *vd_uuid);
 
-// Assign a Syphon server to an output. `server_uuid` is a null-terminated UTF-8 string.
-void syphonout_output_set_server(uint32_t display_id, const char *server_uuid);
-
-// Remove the server assignment from an output.
-void syphonout_output_clear_server(uint32_t display_id);
+// Unassign a physical output from its VirtualDisplay.
+void syphonout_physical_unassign(uint32_t display_id);
 
 // Draw the current frame into the output's CAMetalLayer.
-// Called from a CVDisplayLink background thread — Metal is thread-safe.
 void syphonout_render_frame(uint32_t display_id);
+
+// New frame available for a specific VirtualDisplay.
+// `iosurface_ref` is an `IOSurfaceRef` — retained by Rust until replaced.
+void syphonout_on_new_frame_vd(const char *vd_uuid,
+                               void *iosurface_ref,
+                               uint32_t width,
+                               uint32_t height);
 
 // Set the crossfade duration in milliseconds.
 void syphonout_set_crossfade_duration_ms(double ms);
 
-// Set whether mirroring is enabled and which display is the primary source.
-void syphonout_set_mirror(bool enabled, uint32_t primary_display_id);
+// DEPRECATED — mirroring is now expressed by assigning multiple physical
+// outputs to the same VD. Kept as no-op for binary compatibility.
+void syphonout_set_mirror(bool _enabled, uint32_t _primary_display_id);
 
 // Register a callback invoked (on an arbitrary thread) when the server list changes.
-// Swift should dispatch to main thread and rebuild the menu.
 void syphonout_set_server_changed_callback(void (*callback)(void*), void *userdata);
 
 // Enumerate all currently available Syphon servers.
-// `callback` is invoked synchronously with an array of SyphonOutServerInfo.
 void syphonout_get_servers(void (*callback)(const struct SyphonOutServerInfo*, uintptr_t, void*),
                            void *userdata);
 
 // Get the overall icon state for the menu bar.
 enum SyphonOutIcon syphonout_get_icon_state(void);
 
-// Get the signal status for a specific display.
+// Get the signal status for a specific physical display.
+// Shims through the implicit per-display VD during transition.
 enum SyphonOutSignal syphonout_get_signal_status(uint32_t display_id);
 
-// Returns a pointer to a null-terminated server name string, or NULL.
-// The pointer is valid until the next call to this function for the same display_id.
+// Returns a pointer to a null-terminated server name string for a physical
+// display, or NULL. Valid until the next call for the same display_id.
 const char *syphonout_get_selected_server_name(uint32_t display_id);
 
 // Server appeared on the network.
@@ -103,11 +120,26 @@ void syphonout_on_server_announced(const char *uuid, const char *name, const cha
 // Server left the network.
 void syphonout_on_server_retired(const char *uuid);
 
-// New frame available from a Syphon server for a specific output.
-// `iosurface_ref` is an `IOSurfaceRef` — the MTLTexture is created zero-copy in Rust.
+// Legacy: transition an output to a new mode.
+// Operates on the implicit per-display VD.
+void syphonout_output_set_mode(uint32_t display_id, enum SyphonOutMode mode);
+
+// Legacy: assign a server to a physical output.
+// Operates on the implicit per-display VD.
+void syphonout_output_set_server(uint32_t display_id, const char *server_uuid);
+
+// Legacy: remove server assignment from a physical output.
+void syphonout_output_clear_server(uint32_t display_id);
+
+// Legacy: new frame keyed by display_id instead of vd_uuid.
+// Routes to the implicit VD for that display during transition.
 void syphonout_on_new_frame(uint32_t display_id,
                             void *iosurface_ref,
                             uint32_t width,
                             uint32_t height);
+
+extern void CFRetain(void *cf);
+
+extern void CFRelease(void *cf);
 
 #endif  /* SYPHONOUT_CORE_H */
