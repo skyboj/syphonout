@@ -4,55 +4,58 @@ import IOSurface
 
 /// Generates menu-thumbnail NSImages for Virtual Displays.
 ///
-/// Flow:
-///   1. Ask Rust for the VD's current IOSurface (+1 retained via CFRetain).
-///   2. Take ownership via Unmanaged.takeRetainedValue() — ARC releases at scope exit.
-///   3. Wrap in CIImage (zero-copy — CIImage retains the IOSurface internally).
-///   4. GPU-scale to 160×90 via shared CIContext (Metal backend).
-///   5. Return NSImage for the menu item.
-///
-/// The CIContext is created once and reused — context creation is expensive,
-/// rendering a 160×90 thumbnail is cheap (~0.1 ms on M1).
+/// Strategy per mode:
+///   Signal / Freeze  — IOSurface from Rust (zero-copy via CIImage → GPU scale)
+///   Blank Black      — solid black rectangle
+///   Blank White      — solid white rectangle
+///   Test Pattern     — SMPTE colour bars drawn with AppKit
+///   Off              — nil (no thumbnail shown)
 enum PreviewRenderer {
 
-    /// Target thumbnail size shown in the menu.
     static let thumbnailSize = CGSize(width: 160, height: 90)
 
-    /// Shared GPU-backed CIContext. Lazy so it's created on first preview request.
+    /// Return a 160×90 NSImage for the given VD, or nil if nothing to show.
+    static func thumbnail(for vd: VirtualDisplay) -> NSImage? {
+        switch vd.mode {
+        case SYPHON_OUT_MODE_BLANK_BLACK:
+            return solidColor(NSColor.black)
+        case SYPHON_OUT_MODE_BLANK_WHITE:
+            return solidColor(NSColor.white)
+        case SYPHON_OUT_MODE_BLANK_TEST_PATTERN:
+            return smpteBars()
+        case SYPHON_OUT_MODE_OFF:
+            return nil
+        default:
+            // Signal or Freeze — try to grab the latest IOSurface frame.
+            return iosurfaceThumbnail(for: vd.id)
+        }
+    }
+
+    // MARK: - IOSurface path (Signal / Freeze)
+
+    /// Shared GPU-backed CIContext — created once, reused for every thumbnail.
     private static let ciContext: CIContext = {
-        let options: [CIContextOption: Any] = [
+        CIContext(options: [
             .useSoftwareRenderer: false,
             .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
-        ]
-        return CIContext(options: options)
+        ])
     }()
 
-    /// Return a 160×90 NSImage for `vdId`, or nil if no frame has arrived yet.
-    ///
-    /// Call from the main thread on menu open — CIContext.createCGImage is
-    /// synchronous but fast enough for thumbnail size (~0.1–0.5 ms).
-    static func thumbnail(for vdId: String) -> NSImage? {
-        // Rust returns the IOSurface with a +1 CFRetain so we can safely use it
-        // even if the VD receives a new frame and releases its own reference.
-        // takeRetainedValue() hands ARC ownership of that +1 — no CFRelease needed.
-        guard let rawPtr: UnsafeMutableRawPointer = vdId.withCString({ syphonout_vd_get_iosurface($0) }) else {
-            return nil
-        }
-        let surface = Unmanaged<IOSurface>.fromOpaque(rawPtr).takeRetainedValue()
+    private static func iosurfaceThumbnail(for vdId: String) -> NSImage? {
+        guard let rawPtr: UnsafeMutableRawPointer =
+            vdId.withCString({ syphonout_vd_get_iosurface($0) }) else { return nil }
 
-        // CIImage backed by the IOSurface — zero pixel copy at this point.
+        // takeRetainedValue() consumes the +1 CFRetain Rust added for us.
+        let surface = Unmanaged<IOSurface>.fromOpaque(rawPtr).takeRetainedValue()
         let sourceImage = CIImage(ioSurface: surface)
 
         let srcW = sourceImage.extent.width
         let srcH = sourceImage.extent.height
         guard srcW > 0, srcH > 0 else { return nil }
 
-        // Letterbox-fit: scale uniformly so the image fills the thumbnail without clipping.
-        let scale = min(thumbnailSize.width / srcW, thumbnailSize.height / srcH)
+        let scale  = min(thumbnailSize.width / srcW, thumbnailSize.height / srcH)
         let scaledW = (srcW * scale).rounded()
         let scaledH = (srcH * scale).rounded()
-
-        // Centre inside the thumbnail canvas.
         let tx = ((thumbnailSize.width  - scaledW) / 2).rounded()
         let ty = ((thumbnailSize.height - scaledH) / 2).rounded()
 
@@ -61,10 +64,62 @@ enum PreviewRenderer {
             .transformed(by: CGAffineTransform(translationX: tx, y: ty))
 
         let outputRect = CGRect(origin: .zero, size: thumbnailSize)
-        guard let cgImage = ciContext.createCGImage(transformed, from: outputRect) else {
-            return nil
-        }
+        guard let cg = ciContext.createCGImage(transformed, from: outputRect) else { return nil }
+        return NSImage(cgImage: cg, size: thumbnailSize)
+    }
 
-        return NSImage(cgImage: cgImage, size: thumbnailSize)
+    // MARK: - Solid colour
+
+    private static func solidColor(_ color: NSColor) -> NSImage {
+        NSImage(size: thumbnailSize, flipped: false) { rect in
+            color.setFill()
+            rect.fill()
+            return true
+        }
+    }
+
+    // MARK: - SMPTE colour bars
+
+    /// Classic 7-bar SMPTE pattern: top 75 % bars + bottom strip.
+    private static func smpteBars() -> NSImage {
+        NSImage(size: thumbnailSize, flipped: false) { rect in
+            let w = rect.width
+            let h = rect.height
+
+            // Top 75 % — 7 equal columns
+            let barH   = (h * 0.75).rounded()
+            let barW   = (w / 7).rounded()
+            let topColors: [NSColor] = [
+                NSColor(calibratedRed: 0.75, green: 0.75, blue: 0.75, alpha: 1), // 75 % White
+                NSColor(calibratedRed: 0.75, green: 0.75, blue: 0,    alpha: 1), // Yellow
+                NSColor(calibratedRed: 0,    green: 0.75, blue: 0.75, alpha: 1), // Cyan
+                NSColor(calibratedRed: 0,    green: 0.75, blue: 0,    alpha: 1), // Green
+                NSColor(calibratedRed: 0.75, green: 0,    blue: 0.75, alpha: 1), // Magenta
+                NSColor(calibratedRed: 0.75, green: 0,    blue: 0,    alpha: 1), // Red
+                NSColor(calibratedRed: 0,    green: 0,    blue: 0.75, alpha: 1), // Blue
+            ]
+            for (i, color) in topColors.enumerated() {
+                let x = (CGFloat(i) * barW).rounded()
+                let barRect = NSRect(x: x, y: h - barH, width: barW, height: barH)
+                color.setFill()
+                barRect.fill()
+            }
+
+            // Bottom 25 % — simplified: black / white / black strip
+            let botH = h - barH
+            let segments: [(CGFloat, NSColor)] = [
+                (w * 0.40, NSColor.black),
+                (w * 0.20, NSColor.white),
+                (w * 0.40, NSColor.black),
+            ]
+            var x: CGFloat = 0
+            for (segW, color) in segments {
+                let segRect = NSRect(x: x.rounded(), y: 0, width: segW.rounded(), height: botH)
+                color.setFill()
+                segRect.fill()
+                x += segW
+            }
+            return true
+        }
     }
 }

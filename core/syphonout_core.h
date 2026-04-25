@@ -147,4 +147,22 @@ extern void CFRetain(void *cf);
 
 extern void CFRelease(void *cf);
 
+extern void *IOSurfaceCreate(void *properties);
+
+extern uint32_t IOSurfaceGetID(void *surface);
+
+extern int32_t IOSurfaceLock(void *surface, uint32_t options, uint32_t *seed);
+
+extern int32_t IOSurfaceUnlock(void *surface, uint32_t options, uint32_t *seed);
+
+extern uintptr_t IOSurfaceGetWidth(void *surface);
+
+extern uintptr_t IOSurfaceGetHeight(void *surface);
+
+extern uintptr_t IOSurfaceGetBytesPerRow(void *surface);
+
+extern void CFRetain(void *cf);
+
+extern void CFRelease(void *cf);
+
 #endif  /* SYPHONOUT_CORE_H */

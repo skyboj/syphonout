@@ -10,6 +10,7 @@
 mod core;
 mod output;
 mod renderer;
+mod solink_publisher;
 mod state;
 mod syphon;
 mod virtual_display;

@@ -73,7 +73,7 @@ enum MenuBuilder {
         delegate: StatusBarController
     ) {
         // Preview thumbnail (shown above the VD name if a frame is available)
-        if let thumbnail = PreviewRenderer.thumbnail(for: vd.id) {
+        if let thumbnail = PreviewRenderer.thumbnail(for: vd) {
             let previewItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             previewItem.isEnabled = false
             previewItem.image = thumbnail

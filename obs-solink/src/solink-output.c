@@ -74,22 +74,31 @@ static void render_callback(void *param, uint32_t cx, uint32_t cy)
     gs_texture_t *target = solink_pool_texture(ctx->pool, next_idx);
     if (!target) return;
 
-    // Save and reset OBS blend state so our blit doesn't affect main output
+    // ── Save full GS state before touching anything ──────────────────────────
     gs_blend_state_push();
-    gs_reset_blend_state();
+    gs_matrix_push();
+    struct gs_rect vp;
+    gs_get_viewport(&vp);
 
-    // Render OBS composite into our IOSurface-backed texture
+    // ── Set up our off-screen render target ──────────────────────────────────
     gs_set_render_target(target, NULL);
+    gs_reset_blend_state();
+    gs_matrix_identity();
+    gs_ortho(0.0f, (float)ctx->width,
+             0.0f, (float)ctx->height,
+             -100.0f, 100.0f);
+    gs_set_viewport(0, 0, (int)ctx->width, (int)ctx->height);
+
     // NOTE: device_clear dereferences the vec4 even when only GS_CLEAR_COLOR is
     // set — passing NULL here causes the SIGSEGV we saw in libobs-opengl.
     struct vec4 black = {0};
     gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
-    gs_ortho(0.0f, (float)ctx->width,
-             0.0f, (float)ctx->height,
-             -100.0f, 100.0f);
     obs_render_main_texture();
 
+    // ── Restore render target BEFORE popping matrix/blend ─────────────────────
     gs_set_render_target(NULL, NULL);
+    gs_matrix_pop();
+    gs_set_viewport(vp.x, vp.y, vp.cx, vp.cy);
     gs_blend_state_pop();
 
     // Copy rendered pixels from render target → IOSurface
