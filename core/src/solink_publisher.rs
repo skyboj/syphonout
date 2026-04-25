@@ -13,14 +13,10 @@
 /// All high-performance operations (IOSurface management, atomic updates)
 /// are implemented in Rust for safety and speed.
 
-use std::ffi::{c_void, CString};
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::ffi::c_void;
 use std::ptr;
 
-use metal::{Device, Texture, TextureDescriptor, TextureUsage, PixelFormat};
-use objc2::msg_send;
-use objc2::runtime::AnyObject;
+use metal::{Device, MTLPixelFormat, MTLTextureUsage, Texture, TextureDescriptor};
 
 // CoreFoundation for IOSurface
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -90,8 +86,8 @@ impl SurfacePool {
             let descriptor = TextureDescriptor::new();
             descriptor.set_width(self.width as u64);
             descriptor.set_height(self.height as u64);
-            descriptor.set_pixel_format(PixelFormat::BGRA8Unorm);
-            descriptor.set_usage(TextureUsage::SHADER_READ);
+            descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+            descriptor.set_usage(MTLTextureUsage::ShaderRead);
             
             // Create texture from IOSurface
             // Note: metal::Texture::from_iosurface not exposed in metal crate
@@ -233,9 +229,11 @@ impl SolinkPublisher {
         };
         
         // Update IOSurface IDs in shared memory header
-        if let Some(shm_header) = shm.header.as_mut() {
-            for i in 0..SOLINK_BUFFER_COUNT {
-                shm_header.iosurface_ids[i] = pool.get_surface_id(i);
+        unsafe {
+            if let Some(shm_header) = shm.header.as_mut() {
+                for i in 0..SOLINK_BUFFER_COUNT {
+                    shm_header.iosurface_ids[i] = pool.get_surface_id(i);
+                }
             }
         }
         
@@ -302,9 +300,12 @@ impl SolinkPublisher {
     }
 }
 
-/// Global publisher instance (singleton for now)
-static PUBLISHER: std::sync::OnceLock<Mutex<Option<SolinkPublisher>>> = std::sync::OnceLock::new();
+// TODO: Temporarily commented out to fix compilation for Virtual Display testing
+// Will be restored after fixing Send/Sync implementations
 
-fn get_publisher() -> &'static Mutex<Option<SolinkPublisher>> {
-    PUBLISHER.get_or_init(|| Mutex::new(None))
-}
+// /// Global publisher instance (singleton for now)
+// static PUBLISHER: std::sync::OnceLock<Mutex<Option<SolinkPublisher>>> = std::sync::OnceLock::new();
+
+// fn get_publisher() -> &'static Mutex<Option<SolinkPublisher>> {
+//     PUBLISHER.get_or_init(|| Mutex::new(None))
+// }

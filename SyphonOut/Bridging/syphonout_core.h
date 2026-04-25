@@ -143,26 +143,9 @@ void syphonout_on_new_frame(uint32_t display_id,
                             uint32_t width,
                             uint32_t height);
 
-extern void CFRetain(void *cf);
-
-extern void CFRelease(void *cf);
-
-extern void *IOSurfaceCreate(void *properties);
-
-extern uint32_t IOSurfaceGetID(void *surface);
-
-extern int32_t IOSurfaceLock(void *surface, uint32_t options, uint32_t *seed);
-
-extern int32_t IOSurfaceUnlock(void *surface, uint32_t options, uint32_t *seed);
-
-extern uintptr_t IOSurfaceGetWidth(void *surface);
-
-extern uintptr_t IOSurfaceGetHeight(void *surface);
-
-extern uintptr_t IOSurfaceGetBytesPerRow(void *surface);
-
-extern void CFRetain(void *cf);
-
-extern void CFRelease(void *cf);
+// Note: CFRetain/CFRelease are already declared in CoreFoundation framework
+// Using standard CoreFoundation declarations instead
+// Note: IOSurface functions are already declared in IOSurface framework
+// Using standard IOSurface framework declarations instead
 
 #endif  /* SYPHONOUT_CORE_H */

@@ -19,6 +19,7 @@ parking_lot = "0.12"
 
 # C string / type utilities
 libc = "0.2"
+uuid = { version = "1.23.1", features = ["v4"] }
 
 [build-dependencies]
 cbindgen = "0.29"
