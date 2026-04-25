@@ -2,18 +2,20 @@
  solink-surface-pool.m — IOSurface triple-buffer pool (ObjC + Metal)
  ====================================================================
  Creates SOLINK_BUFFER_COUNT IOSurfaces for cross-process sharing,
- plus separate OBS gs_texture_t render targets for OBS to draw into.
+ plus OBS gs_stagesurf_t staging surfaces for GPU→CPU readback.
 
- Why two sets of textures?
-   gs_texture_create_from_iosurface() returns a texture that is NOT a
-   valid render target in OBS's OpenGL backend. Attempting to
-   gs_set_render_target() with it produces:
-       "Texture is not a render target"
-       "device_set_render_target (GL) failed"
+ Render targets are intentionally NOT managed here.
+ The caller (solink-output.c) owns gs_texrender_t per slot, which:
+   - properly saves/restores OBS render state (including the active render
+     target) around each off-screen render pass
+   - is the canonical OBS pattern for capture/output plugins
 
-   Workaround: create plain gs_texture_t render targets (BGRA_UNORM),
-   render OBS scene into them, then copy pixels to the IOSurface via
-   OBS's gs_stage_texture() → gs_stagesurface_map() API (cross-backend).
+ GPU→IOSurface copy path (solink_pool_copy_to_iosurface):
+   gs_texture_t * (from gs_texrender_get_texture)
+     → gs_stage_texture            (GPU→staging, async submit)
+     → gs_stagesurface_map         (blocks until GPU done)
+     → memcpy                      (staging→IOSurface CPU memory)
+     → gs_stagesurface_unmap
 
  All gs_* calls MUST happen on the OBS graphics thread.
  */
@@ -37,13 +39,9 @@ struct solink_surface_pool {
     IOSurfaceRef   surfaces[SOLINK_BUFFER_COUNT];
     uint32_t       surface_ids[SOLINK_BUFFER_COUNT];
 
-    // Separate render-target textures for OBS to draw into
-    gs_texture_t  *render_targets[SOLINK_BUFFER_COUNT];
-
-    // Stage surfaces for GPU→CPU readback (OBS cross-backend API)
+    // Stage surfaces for GPU→CPU readback (OBS cross-backend API).
+    // Render targets are owned by gs_texrender_t in solink_output_t.
     gs_stagesurf_t *stage_surfaces[SOLINK_BUFFER_COUNT];
-
-    uint32_t       current_write_index;
 };
 
 // ─── IOSurface creation ──────────────────────────────────────────────────────
@@ -104,19 +102,8 @@ solink_surface_pool_t *solink_pool_create(uint32_t width, uint32_t height,
         }
         pool->surface_ids[i] = IOSurfaceGetID(pool->surfaces[i]);
 
-        // 2. Create a separate render-target texture for OBS to draw into.
-        pool->render_targets[i] = gs_texture_create(
-            width, height, GS_BGRA, 1, NULL, GS_RENDER_TARGET);
-
-        if (!pool->render_targets[i]) {
-            blog(LOG_ERROR,
-                 "[SOLink] gs_texture_create(render_target) failed for slot %u", i);
-            obs_leave_graphics();
-            solink_pool_destroy(pool);
-            return NULL;
-        }
-
-        // 3. Create stage surface for GPU→CPU readback
+        // 2. Create stage surface for GPU→CPU readback.
+        //    Render targets are owned by gs_texrender_t in solink_output_t.
         pool->stage_surfaces[i] = gs_stagesurface_create(width, height, GS_BGRA);
         if (!pool->stage_surfaces[i]) {
             blog(LOG_ERROR,
@@ -147,10 +134,6 @@ void solink_pool_destroy(solink_surface_pool_t *pool)
             gs_stagesurface_destroy(pool->stage_surfaces[i]);
             pool->stage_surfaces[i] = NULL;
         }
-        if (pool->render_targets[i]) {
-            gs_texture_destroy(pool->render_targets[i]);
-            pool->render_targets[i] = NULL;
-        }
         if (pool->surfaces[i]) {
             CFRelease(pool->surfaces[i]);
             pool->surfaces[i] = NULL;
@@ -162,19 +145,7 @@ void solink_pool_destroy(solink_surface_pool_t *pool)
     bfree(pool);
 }
 
-// ─── Index / accessor ────────────────────────────────────────────────────────
-
-uint32_t solink_pool_next_index(const solink_surface_pool_t *pool)
-{
-    return (pool->current_write_index + 1) % SOLINK_BUFFER_COUNT;
-}
-
-struct gs_texture *solink_pool_texture(const solink_surface_pool_t *pool,
-                                       uint32_t index)
-{
-    if (!pool || index >= SOLINK_BUFFER_COUNT) return NULL;
-    return pool->render_targets[index];
-}
+// ─── IOSurface ID accessor ───────────────────────────────────────────────────
 
 uint32_t solink_pool_iosurface_id(const solink_surface_pool_t *pool,
                                    uint32_t index)
@@ -183,14 +154,18 @@ uint32_t solink_pool_iosurface_id(const solink_surface_pool_t *pool,
     return pool->surface_ids[index];
 }
 
-// ─── Copy render target → IOSurface ──────────────────────────────────────────
+// ─── Copy gs_texrender texture → IOSurface ───────────────────────────────────
+//
+// @p tex is gs_texrender_get_texture(texrender[index]) — the texture that
+// obs_render_main_texture() drew into during gs_texrender_begin/end.
 
-void solink_pool_copy_to_iosurface(solink_surface_pool_t *pool, uint32_t index)
+void solink_pool_copy_to_iosurface(solink_surface_pool_t *pool,
+                                   uint32_t index,
+                                   gs_texture_t *tex)
 {
     if (!pool || index >= SOLINK_BUFFER_COUNT) return;
-    if (!pool->surfaces[index] || !pool->render_targets[index]) return;
+    if (!pool->surfaces[index] || !tex) return;
 
-    gs_texture_t   *tex  = pool->render_targets[index];
     gs_stagesurf_t *stage = pool->stage_surfaces[index];
     uint32_t w = pool->width;
     uint32_t h = pool->height;

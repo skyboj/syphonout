@@ -2,13 +2,16 @@
  solink-output.c — OBS output implementation
  =============================================
  Hooks into OBS main render loop via obs_add_main_render_callback().
- Each frame: blit OBS scene → IOSurface-backed texture → atomic publish.
+ Each frame: blit OBS scene → gs_texrender → stage → IOSurface → atomic publish.
 
- Bug fixes vs Phase 1:
-   • Track write index in ctx (not pool) — pool was never advancing
-   • UUID via CFUUIDCreate (CoreFoundation, no rand() hack)
-   • obs_output_begin_data_capture return value checked
-   • #include <stdio.h><string.h> for snprintf/bzalloc
+ Key design: gs_texrender_t instead of manual gs_set_render_target().
+   obs_add_main_render_callback fires while OBS has its own render target set.
+   Manually calling gs_set_render_target + restoring to NULL corrupts OBS's
+   render pipeline (OBS continues rendering to NULL instead of its output texture),
+   causing the OBS preview/output to show a black screen.
+
+   gs_texrender_begin/end saves and restores the PREVIOUS render target properly,
+   which is the canonical OBS pattern for off-screen capture (obs-syphon, NDI, etc).
 */
 
 #include <stdio.h>
@@ -42,10 +45,14 @@ typedef struct solink_output {
     uint32_t  width;
     uint32_t  height;
 
-    // Triple-buffer write rotation tracked here (not in pool).
-    // last_write_idx = slot subscriber is currently reading.
+    // Triple-buffer write rotation tracked here.
     // Next write goes into (last_write_idx + 1) % SOLINK_BUFFER_COUNT.
     uint32_t  last_write_idx;
+
+    // One gs_texrender_t per buffer slot — used for safe off-screen rendering.
+    // gs_texrender_begin/end saves and restores OBS's active render target,
+    // preventing corruption of OBS's own compositing pipeline.
+    gs_texrender_t *texrenders[SOLINK_BUFFER_COUNT];
 
     bool      active;
 } solink_output_t;
@@ -69,40 +76,32 @@ static void render_callback(void *param, uint32_t cx, uint32_t cy)
     solink_output_t *ctx = param;
     if (!ctx->active || !ctx->pool || !ctx->shm) return;
 
-    // Next slot in round-robin (never the one subscriber just read)
+    // Next slot in round-robin (never the one subscriber is currently reading).
     uint32_t next_idx = (ctx->last_write_idx + 1) % SOLINK_BUFFER_COUNT;
-    gs_texture_t *target = solink_pool_texture(ctx->pool, next_idx);
-    if (!target) return;
+    gs_texrender_t *tr = ctx->texrenders[next_idx];
+    if (!tr) return;
 
-    // ── Save full GS state before touching anything ──────────────────────────
-    gs_blend_state_push();
-    gs_matrix_push();
-    struct gs_rect vp;
-    gs_get_viewport(&vp);
+    // ── Off-screen render via gs_texrender ───────────────────────────────────
+    // gs_texrender_begin saves the current OBS render target (OBS's own output
+    // texture) and sets ours. gs_texrender_end restores it — no state corruption.
+    gs_texrender_reset(tr);
+    if (!gs_texrender_begin(tr, ctx->width, ctx->height)) return;
 
-    // ── Set up our off-screen render target ──────────────────────────────────
-    gs_set_render_target(target, NULL);
-    gs_reset_blend_state();
-    gs_matrix_identity();
+    struct vec4 black = {0};
+    gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
     gs_ortho(0.0f, (float)ctx->width,
              0.0f, (float)ctx->height,
              -100.0f, 100.0f);
-    gs_set_viewport(0, 0, (int)ctx->width, (int)ctx->height);
-
-    // NOTE: device_clear dereferences the vec4 even when only GS_CLEAR_COLOR is
-    // set — passing NULL here causes the SIGSEGV we saw in libobs-opengl.
-    struct vec4 black = {0};
-    gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
+    gs_blend_state_push();
+    gs_reset_blend_state();
     obs_render_main_texture();
-
-    // ── Restore render target BEFORE popping matrix/blend ─────────────────────
-    gs_set_render_target(NULL, NULL);
-    gs_matrix_pop();
-    gs_set_viewport(vp.x, vp.y, vp.cx, vp.cy);
     gs_blend_state_pop();
 
-    // Copy rendered pixels from render target → IOSurface
-    solink_pool_copy_to_iosurface(ctx->pool, next_idx);
+    gs_texrender_end(tr);  // ← restores OBS's render target automatically
+
+    // ── Copy rendered texture → IOSurface ────────────────────────────────────
+    gs_texture_t *tex = gs_texrender_get_texture(tr);
+    solink_pool_copy_to_iosurface(ctx->pool, next_idx, tex);
 
     // Atomically publish the completed frame
     solink_shm_publish_frame(ctx->shm, next_idx);
@@ -145,6 +144,16 @@ static void solink_output_destroy(void *data)
         solink_discovery_retire(ctx->uuid);
         ctx->active = false;
     }
+
+    obs_enter_graphics();
+    for (uint32_t i = 0; i < SOLINK_BUFFER_COUNT; i++) {
+        if (ctx->texrenders[i]) {
+            gs_texrender_destroy(ctx->texrenders[i]);
+            ctx->texrenders[i] = NULL;
+        }
+    }
+    obs_leave_graphics();
+
     if (ctx->shm)  { solink_shm_destroy(ctx->shm);   ctx->shm  = NULL; }
     if (ctx->pool) { solink_pool_destroy(ctx->pool);  ctx->pool = NULL; }
 
@@ -167,15 +176,35 @@ static bool solink_output_start(void *data)
     blog(LOG_INFO, "[SOLink] Starting — %ux%u server='%s'",
          ctx->width, ctx->height, ctx->server_name);
 
-    // 1. IOSurface triple buffer (gs_* calls require graphics context)
+    // 1. gs_texrender_t per buffer slot (must be created on graphics thread)
+    obs_enter_graphics();
+    for (uint32_t i = 0; i < SOLINK_BUFFER_COUNT; i++) {
+        ctx->texrenders[i] = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+        if (!ctx->texrenders[i]) {
+            obs_leave_graphics();
+            blog(LOG_ERROR, "[SOLink] gs_texrender_create failed for slot %u", i);
+            return false;
+        }
+    }
+    obs_leave_graphics();
+
+    // 2. IOSurface triple buffer + stage surfaces (gs_* calls require graphics context)
     ctx->pool = solink_pool_create(ctx->width, ctx->height,
                                    SOLINK_PIXEL_FORMAT_BGRA8);
     if (!ctx->pool) {
         blog(LOG_ERROR, "[SOLink] Failed to create surface pool");
+        obs_enter_graphics();
+        for (uint32_t i = 0; i < SOLINK_BUFFER_COUNT; i++) {
+            if (ctx->texrenders[i]) {
+                gs_texrender_destroy(ctx->texrenders[i]);
+                ctx->texrenders[i] = NULL;
+            }
+        }
+        obs_leave_graphics();
         return false;
     }
 
-    // 2. Shared memory region
+    // 3. Shared memory region
     ctx->shm = solink_shm_create(ctx->shm_name, ctx->pool,
                                   ctx->width, ctx->height,
                                   SOLINK_PIXEL_FORMAT_BGRA8,
@@ -187,11 +216,11 @@ static bool solink_output_start(void *data)
         return false;
     }
 
-    // 3. Hook into OBS main render loop
+    // 4. Hook into OBS main render loop
     obs_add_main_render_callback(render_callback, ctx);
     ctx->active = true;
 
-    // 4. Announce to subscribers
+    // 5. Announce to subscribers
     solink_discovery_announce(ctx->uuid, ctx->server_name, "OBS",
                                ctx->shm_name,
                                ctx->width, ctx->height,
