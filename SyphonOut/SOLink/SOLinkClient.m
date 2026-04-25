@@ -104,8 +104,10 @@ typedef struct {
 
 // uuid (no prefix) → announce userInfo dict
 static NSMutableDictionary<NSString *, NSDictionary *> *gServers;
-// displayId → SOLinkSubscriber
+// vdUUID → SOLinkSubscriber
 static NSMutableDictionary<NSString *, SOLinkSubscriber *> *gSubscribers;
+// publisherUUID → set of vdUUIDs waiting for it (server not in cache yet)
+static NSMutableDictionary<NSString *, NSMutableSet<NSString *> *> *gPending;
 // notification observers (for removeObserver on stop)
 static NSMutableArray<id> *gObservers;
 
@@ -139,6 +141,17 @@ static void handleAnnounce(NSDictionary *info) {
     syphonout_on_server_announced(prefixed.UTF8String,
                                   name.UTF8String,
                                   appName.UTF8String);
+
+    // Retry any VD subscriptions that were queued while server wasn't in cache.
+    NSMutableSet<NSString *> *waiting = nil;
+    @synchronized (gPending) {
+        waiting = gPending[uuid];
+        [gPending removeObjectForKey:uuid];
+    }
+    for (NSString *vdUUID in waiting) {
+        NSLog(@"[SOLinkClient] Retrying queued subscription: VD %@ → publisher %@", vdUUID, uuid);
+        startSubscriberForVD(vdUUID, uuid);
+    }
 
     NSLog(@"[SOLinkClient] Announced: '%@' (by %@) uuid=%@", name, appName, uuid);
 }
@@ -206,6 +219,7 @@ void SOLinkClientInit(void) {
     dispatch_once(&once, ^{
         gServers     = [NSMutableDictionary dictionary];
         gSubscribers = [NSMutableDictionary dictionary];
+        gPending     = [NSMutableDictionary dictionary];
         gObservers   = [NSMutableArray array];
         gPollQueue   = dispatch_queue_create("com.syphonout.solink.poll",
                                              DISPATCH_QUEUE_SERIAL);
@@ -249,7 +263,18 @@ static void startSubscriberForVD(NSString *vdUUID, NSString *publisherUUID) {
         info = gServers[publisherUUID];
     }
     if (!info) {
-        NSLog(@"[SOLinkClient] Server %@ not in cache — cannot subscribe VD %@",
+        // Server not in gServers yet (e.g. SyphonOut started before OBS replied
+        // to the Enumerate broadcast). Queue the VD — handleAnnounce will retry
+        // when OBS announces.
+        @synchronized (gPending) {
+            NSMutableSet *waiting = gPending[publisherUUID];
+            if (!waiting) {
+                waiting = [NSMutableSet set];
+                gPending[publisherUUID] = waiting;
+            }
+            [waiting addObject:vdUUID];
+        }
+        NSLog(@"[SOLinkClient] Server %@ not in cache — VD %@ queued, will retry on announce",
               publisherUUID, vdUUID);
         return;
     }

@@ -52,9 +52,31 @@ enum obs_frontend_event {
 };
 
 typedef void (*obs_frontend_cb)(enum obs_frontend_event event, void *private_data);
+typedef void (*obs_frontend_menu_cb)(void *private_data);
+
+struct obs_frontend_source_list {
+    DARRAY(obs_source_t *) sources;
+};
+
+static inline void obs_frontend_source_list_free(struct obs_frontend_source_list *source_list)
+{
+    size_t i;
+    for (i = 0; i < source_list->sources.num; i++)
+        obs_source_release(source_list->sources.array[i]);
+    da_free(source_list->sources);
+}
 
 EXPORT void obs_frontend_add_event_callback(obs_frontend_cb callback, void *private_data);
 EXPORT void obs_frontend_remove_event_callback(obs_frontend_cb callback, void *private_data);
+
+EXPORT void obs_frontend_add_tools_menu_item(const char *name,
+                                              obs_frontend_menu_cb callback,
+                                              void *private_data);
+
+EXPORT void obs_frontend_get_scenes(struct obs_frontend_source_list *sources);
+
+EXPORT obs_source_t *obs_frontend_get_current_scene(void);
+EXPORT obs_source_t *obs_frontend_get_current_preview_scene(void);
 
 #ifdef __cplusplus
 }

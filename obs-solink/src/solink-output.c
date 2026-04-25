@@ -30,8 +30,19 @@
 #include "solink-shm.h"
 #include "solink-discovery.h"
 #include "solink-protocol.h"
+#include "../include/obs-frontend-api.h"
 
 // ─── Output context ──────────────────────────────────────────────────────────
+
+// ─── Source type ─────────────────────────────────────────────────────────────
+
+/// What OBS content this output captures.
+typedef enum {
+    SOLINK_SOURCE_MAIN_OUTPUT = 0,  ///< OBS program output (default)
+    SOLINK_SOURCE_PREVIEW     = 1,  ///< OBS preview (Studio Mode)
+    SOLINK_SOURCE_SCENE       = 2,  ///< A specific named scene
+    SOLINK_SOURCE_SOURCE      = 3,  ///< A specific named source
+} solink_source_type_t;
 
 typedef struct solink_output {
     obs_output_t          *output;
@@ -39,11 +50,15 @@ typedef struct solink_output {
     solink_shm_t          *shm;
 
     char      uuid[64];
-    char      server_name[32];
+    char      server_name[64];
     char      shm_name[SOLINK_SHM_NAME_MAX];
 
     uint32_t  width;
     uint32_t  height;
+
+    // Source selection — what to capture
+    solink_source_type_t source_type;
+    char                 source_name[256];  // scene/source name when applicable
 
     // Triple-buffer write rotation tracked here.
     // Next write goes into (last_write_idx + 1) % SOLINK_BUFFER_COUNT.
@@ -94,7 +109,39 @@ static void render_callback(void *param, uint32_t cx, uint32_t cy)
              -100.0f, 100.0f);
     gs_blend_state_push();
     gs_reset_blend_state();
-    obs_render_main_texture();
+
+    switch (ctx->source_type) {
+    case SOLINK_SOURCE_MAIN_OUTPUT:
+        obs_render_main_texture();
+        break;
+
+    case SOLINK_SOURCE_PREVIEW: {
+        obs_source_t *preview = obs_frontend_get_current_preview_scene();
+        if (preview) {
+            obs_source_video_render(preview);
+            obs_source_release(preview);
+        } else {
+            // Fallback: show program output when not in Studio Mode
+            obs_render_main_texture();
+        }
+        break;
+    }
+
+    case SOLINK_SOURCE_SCENE:
+    case SOLINK_SOURCE_SOURCE: {
+        obs_source_t *src = obs_get_source_by_name(ctx->source_name);
+        if (src) {
+            obs_source_video_render(src);
+            obs_source_release(src);
+        }
+        break;
+    }
+
+    default:
+        obs_render_main_texture();
+        break;
+    }
+
     gs_blend_state_pop();
 
     gs_texrender_end(tr);  // ← restores OBS's render target automatically
@@ -125,6 +172,10 @@ static void *solink_output_create(obs_data_t *settings, obs_output_t *output)
     const char *name = obs_data_get_string(settings, "server_name");
     snprintf(ctx->server_name, sizeof(ctx->server_name),
              "%s", (name && *name) ? name : "OBS Main");
+
+    ctx->source_type = (solink_source_type_t)obs_data_get_int(settings, "source_type");
+    const char *src_name = obs_data_get_string(settings, "source_name");
+    if (src_name) snprintf(ctx->source_name, sizeof(ctx->source_name), "%s", src_name);
 
     generate_uuid(ctx->uuid, sizeof(ctx->uuid));
     solink_shm_name(ctx->uuid, ctx->shm_name);
@@ -265,6 +316,8 @@ static obs_properties_t *solink_output_get_properties(void *data)
 static void solink_output_get_defaults(obs_data_t *settings)
 {
     obs_data_set_default_string(settings, "server_name", "OBS Main");
+    obs_data_set_default_int(settings, "source_type", SOLINK_SOURCE_MAIN_OUTPUT);
+    obs_data_set_default_string(settings, "source_name", "");
 }
 
 // ─── Registration ─────────────────────────────────────────────────────────────
@@ -284,4 +337,39 @@ static struct obs_output_info solink_output_info = {
 void solink_output_register(void)
 {
     obs_register_output(&solink_output_info);
+}
+
+// ─── Public stream management API ────────────────────────────────────────────
+
+/// Create and start a named SOLink output with the specified source.
+/// @p source_type: 0=main output, 1=preview, 2=scene, 3=source
+/// @p source_name: scene/source name (ignored for main/preview)
+/// Returns the obs_output_t (caller owns one reference). NULL on failure.
+obs_output_t *solink_output_create_stream(const char *stream_name,
+                                           int         source_type,
+                                           const char *source_name)
+{
+    obs_data_t *settings = obs_data_create();
+    obs_data_set_string(settings, "server_name", stream_name ? stream_name : "OBS");
+    obs_data_set_int(settings, "source_type", source_type);
+    obs_data_set_string(settings, "source_name", source_name ? source_name : "");
+
+    obs_output_t *output = obs_output_create(
+        "solink_output", stream_name ? stream_name : "SOLink", settings, NULL);
+    obs_data_release(settings);
+
+    if (!output) {
+        blog(LOG_ERROR, "[SOLink] obs_output_create failed for stream '%s'", stream_name);
+        return NULL;
+    }
+
+    if (!obs_output_start(output)) {
+        blog(LOG_ERROR, "[SOLink] obs_output_start failed for stream '%s'", stream_name);
+        obs_output_release(output);
+        return NULL;
+    }
+
+    blog(LOG_INFO, "[SOLink] Stream '%s' created (source_type=%d, source='%s')",
+         stream_name, source_type, source_name ? source_name : "");
+    return output;
 }

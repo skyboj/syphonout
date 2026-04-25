@@ -40,6 +40,7 @@ add_library(obs-solink MODULE
     src/solink-surface-pool.m
     src/solink-shm.c
     src/solink-discovery.m
+    src/solink-streams-ui.m
 )
 
 # ─── Headers ──────────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ target_link_options(obs-solink PRIVATE
 # ─── System frameworks ────────────────────────────────────────────────────────
 target_link_libraries(obs-solink PRIVATE
     "-framework Foundation"
+    "-framework AppKit"              # NSPanel / NSTableView for streams UI
     "-framework CoreFoundation"      # CFUUIDCreate for proper UUID generation
     "-framework IOSurface"
     "-framework Metal"

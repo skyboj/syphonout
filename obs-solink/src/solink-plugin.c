@@ -11,6 +11,7 @@
 
 #include "solink-output.h"
 #include "solink-discovery.h"
+#include "solink-streams-ui.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-solink", "en-US")
@@ -38,33 +39,19 @@ static void frontend_event_cb(enum obs_frontend_event event, void *data)
             break;
         }
 
-        {
-            obs_data_t *settings = obs_data_create();
-            obs_data_set_string(settings, "server_name", "OBS Main");
-
-            g_solink_output = obs_output_create(
-                "solink_output", "SOLink Main Output", settings, NULL);
-            obs_data_release(settings);
-
-            if (!g_solink_output) {
-                blog(LOG_ERROR, "[SOLink] obs_output_create failed");
-                break;
-            }
-
-            if (obs_output_start(g_solink_output)) {
-                blog(LOG_INFO, "[SOLink] Output started successfully");
-            } else {
-                blog(LOG_ERROR, "[SOLink] obs_output_start failed");
-            }
+        g_solink_output = solink_output_create_stream("OBS Main", 0, "");
+        if (g_solink_output) {
+            blog(LOG_INFO, "[SOLink] Default stream started");
+            solink_streams_ui_add_initial_stream("OBS Main", g_solink_output);
         }
         break;
 
     case OBS_FRONTEND_EVENT_EXIT:
-        // OBS is shutting down — stop and destroy the output cleanly.
-        blog(LOG_INFO, "[SOLink] OBS exiting — stopping output");
+        // OBS is shutting down — stop all streams cleanly.
+        blog(LOG_INFO, "[SOLink] OBS exiting — stopping all streams");
+        solink_streams_ui_stop_all();
         if (g_solink_output) {
-            obs_output_stop(g_solink_output);
-            obs_output_release(g_solink_output);
+            // Already stopped by stop_all, just clear the reference
             g_solink_output = NULL;
         }
         break;
@@ -86,6 +73,9 @@ bool obs_module_load(void)
     // Will be called once OBS UI is ready
     obs_frontend_add_event_callback(frontend_event_cb, NULL);
 
+    // Add "SOLink Streams…" to OBS Tools menu
+    obs_frontend_add_tools_menu_item("SOLink Streams…", solink_streams_ui_show, NULL);
+
     blog(LOG_INFO, "[SOLink] Registered — waiting for OBS_FRONTEND_EVENT_FINISHED_LOADING");
     return true;
 }
@@ -95,12 +85,5 @@ void obs_module_unload(void)
     blog(LOG_INFO, "[SOLink] Unloading");
 
     obs_frontend_remove_event_callback(frontend_event_cb, NULL);
-
-    if (g_solink_output) {
-        obs_output_stop(g_solink_output);
-        obs_output_release(g_solink_output);
-        g_solink_output = NULL;
-    }
-
     solink_discovery_deinit();
 }
