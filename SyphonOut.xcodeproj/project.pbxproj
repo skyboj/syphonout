@@ -20,6 +20,8 @@
 		CD22C5176CFE384DD5119A7E /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 769488A7B31024CC7CFA777C /* main.m */; };
 		D50C921050D13023D1306BBF /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 29CFA98667C281D9FA1D66DD /* Shaders.metal */; };
 		DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */; };
+		1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C741475E3337445283B7FC76 /* PermissionManager.swift */; };
+		27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +42,8 @@
 		CA38D4E42749C2BEFF672F60 /* syphonout_core.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = syphonout_core.h; sourceTree = "<group>"; };
 		CB1856EF560E4B79BBB5E850 /* SyphonOut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SyphonOut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBuilder.swift; sourceTree = "<group>"; };
+		C741475E3337445283B7FC76 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
+		2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRoutingWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -154,12 +158,22 @@
 				2329919142B57BADD49FCAE6 /* Metal */,
 				3328D44ADC0BC3F0C889C44B /* Output */,
 				378E8067EB5B4A5E2AD3EE11 /* Preferences */,
+				F3A2B5C8D9E1F2A3B4C5D6E7 /* WindowRouting */,
 				07F4CE65742967D11ADE84EF /* Resources */,
 				8CD45E12F220F96CD9505BAB /* SOLink */,
 				5D2E395FB9D920E946F36074 /* Syphon */,
 				157DB83FF460D1A14759DF7D /* VirtualDisplay */,
 			);
 			path = SyphonOut;
+			sourceTree = "<group>";
+		};
+		F3A2B5C8D9E1F2A3B4C5D6E7 /* WindowRouting */ = {
+			isa = PBXGroup;
+			children = (
+				C741475E3337445283B7FC76 /* PermissionManager.swift */,
+				2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */,
+			);
+			path = WindowRouting;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -259,6 +273,8 @@
 				4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */,
 				615936C80098284B72BD790A /* OutputWindowController.swift in Sources */,
 				45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */,
+				1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */,
+				27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */,
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
 				BF6EE4EA0C9604908FF9FA9F /* PreviewRenderer.swift in Sources */,
 				76847DE3E573320DB3654628 /* SOLinkClient.m in Sources */,

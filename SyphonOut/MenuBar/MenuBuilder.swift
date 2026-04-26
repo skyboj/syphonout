@@ -47,6 +47,14 @@ enum MenuBuilder {
         menu.addItem(.separator())
 
         // ── Global actions ─────────────────────────────────────────────────
+        let routingItem = NSMenuItem(
+            title: "Window Routing…",
+            action: #selector(StatusBarController.openWindowRouting(_:)),
+            keyEquivalent: ""
+        )
+        routingItem.target = delegate
+        menu.addItem(routingItem)
+
         let prefsItem = NSMenuItem(
             title: "Preferences…",
             action: #selector(StatusBarController.openPreferences(_:)),

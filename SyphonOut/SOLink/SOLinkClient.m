@@ -121,6 +121,10 @@ static uint64_t now_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }
 
+// ─── Forward declarations ─────────────────────────────────────────────────────
+
+static void startSubscriberForVD(NSString *vdUUID, NSString *publisherUUID);
+
 // ─── Server announce / retire helpers ────────────────────────────────────────
 
 static void handleAnnounce(NSDictionary *info) {

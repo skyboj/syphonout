@@ -237,6 +237,10 @@ extension StatusBarController {
         sender.state = mirrorEnabled ? .on : .off
     }
 
+    @objc func openWindowRouting(_ sender: NSMenuItem) {
+        WindowRoutingWindowController.shared.showRouting()
+    }
+
     @objc func openPreferences(_ sender: NSMenuItem) {
         PreferencesWindowController.shared.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
