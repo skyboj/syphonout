@@ -36,8 +36,11 @@ final class PermissionManager {
         CGRequestScreenCaptureAccess()
     }
 
+    /// Gate for opening the routing panel — only Screen Recording is required
+    /// upfront (SCShareableContent needs it). Accessibility is checked lazily
+    /// by WindowMover at move-time and surfaced as an inline error there.
     var allGranted: Bool {
-        hasAccessibility && hasScreenRecording
+        hasScreenRecording
     }
 
     // MARK: - Public entry point
@@ -64,12 +67,6 @@ final class PermissionManager {
         let missing = buildMissingList()
         guard !missing.isEmpty else { completion(true); return }
 
-        // Register the binary with the system for any missing permissions.
-        // This is a one-shot call that opens System Settings and adds the app
-        // to the relevant Privacy pane — subsequent checks remain silent.
-        if missing.contains(where: { $0.kind == .accessibility }) {
-            requestAccessibility()
-        }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -130,14 +127,10 @@ final class PermissionManager {
 
     private func buildMissingList() -> [MissingPermission] {
         var list: [MissingPermission] = []
-        if !hasAccessibility {
-            list.append(MissingPermission(
-                kind: .accessibility,
-                displayName: "Accessibility",
-                settingsURL: URL(string:
-                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            ))
-        }
+        // Accessibility is NOT checked here — it is verified lazily by
+        // WindowMover at move-time. Checking it upfront causes loops on
+        // debug builds (binary path changes every build, AXIsProcessTrusted
+        // returns false regardless of what is enabled in System Settings).
         if !hasScreenRecording {
             list.append(MissingPermission(
                 kind: .screenRecording,
