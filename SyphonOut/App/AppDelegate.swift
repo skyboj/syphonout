@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let obs = assignmentObserver  { NotificationCenter.default.removeObserver(obs) }
         if let obs = screenChangeObserver { NotificationCenter.default.removeObserver(obs) }
+        WindowCaptureManager.shared.stopAll()
         SOLinkClientStop()
         SyphonNativeStop()
         syphonout_core_deinit()

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B8C9D0E1F2A1B2C3D4E5F6A7 /* WindowCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */; };
+		F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */; };
 		D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */; };
 		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
@@ -27,6 +29,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureManager.swift; sourceTree = "<group>"; };
+		E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCapture.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMover.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventory.swift; sourceTree = "<group>"; };
 		17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputWindowController.swift; sourceTree = "<group>"; };
@@ -176,6 +180,8 @@
 			children = (
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */,
 				C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */,
+				A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */,
+				E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */,
 				C741475E3337445283B7FC76 /* PermissionManager.swift */,
 				2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */,
 			);
@@ -282,6 +288,8 @@
 				1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */,
 				D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */,
+				B8C9D0E1F2A1B2C3D4E5F6A7 /* WindowCaptureManager.swift in Sources */,
+				F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */,
 				27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */,
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
 				BF6EE4EA0C9604908FF9FA9F /* PreviewRenderer.swift in Sources */,
