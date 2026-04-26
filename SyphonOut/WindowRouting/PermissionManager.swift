@@ -2,7 +2,7 @@ import AppKit
 import ScreenCaptureKit
 
 /// Checks and requests the two permissions Window Routing needs:
-///   - Accessibility  (to move windows via AX API)
+///   - Accessibility    (to move windows via AX API)
 ///   - Screen Recording (to enumerate windows via SCShareableContent)
 ///
 /// Usage:
@@ -16,14 +16,18 @@ final class PermissionManager {
 
     // MARK: - Permission state
 
-    /// Synchronous Accessibility check.
+    /// Accessibility check + prompt. `AXIsProcessTrustedWithOptions` with
+    /// kAXTrustedCheckOptionPrompt:true both reads current state AND causes
+    /// macOS to add this binary to System Settings → Privacy → Accessibility
+    /// (same binary-path registration behaviour as CGRequestScreenCaptureAccess).
     var hasAccessibility: Bool {
-        AXIsProcessTrusted()
+        let opts = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(opts)
     }
 
-    /// Screen Recording check. Uses CGRequestScreenCaptureAccess() which both
-    /// reads the current state AND triggers the system prompt on first call,
-    /// causing macOS to add the app to System Settings → Privacy → Screen Recording.
+    /// Screen Recording check + prompt. `CGRequestScreenCaptureAccess` reads
+    /// the current grant state AND triggers the system prompt on first call,
+    /// adding the app to System Settings → Privacy → Screen Recording.
     var hasScreenRecording: Bool {
         CGRequestScreenCaptureAccess()
     }
@@ -35,71 +39,71 @@ final class PermissionManager {
     // MARK: - Public entry point
 
     /// Checks permissions and, if any are missing, presents a blocking alert.
-    /// @p parentWindow — if non-nil, alert is shown as a sheet; otherwise modal.
-    /// @p completion — called on the main thread once the user dismisses the alert
-    ///   (true = all granted, false = user dismissed without granting all).
+    /// `parentWindow` — if non-nil, alert is shown as a sheet; otherwise modal.
+    /// `completion` — called on the main thread:
+    ///   true  = all permissions granted
+    ///   false = user dismissed without granting all
     func requirePermissions(
         in parentWindow: NSWindow? = nil,
         completion: @escaping (Bool) -> Void
     ) {
-        // Fast path: already have everything.
-        if allGranted {
-            completion(true)
-            return
-        }
-
+        if allGranted { completion(true); return }
         showPermissionAlert(in: parentWindow, completion: completion)
     }
 
-    // MARK: - Private
+    // MARK: - Alert
 
     private func showPermissionAlert(
         in parentWindow: NSWindow?,
         completion: @escaping (Bool) -> Void
     ) {
         let missing = buildMissingList()
+        guard !missing.isEmpty else { completion(true); return }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Additional permissions required"
         alert.informativeText =
-            "Window Routing needs the following permissions in System Settings:\n\n" +
+            "Window Routing needs the following permissions:\n\n" +
             missing.map { "• \($0.displayName)" }.joined(separator: "\n") +
-            "\n\nGrant access, then try again."
+            "\n\nIf already enabled, click \"Check Again\" to retry."
 
-        // Primary action buttons — one per missing permission.
+        // Button order matters: first = default (Return key)
+        // "Check Again" is primary so the user can retry without reopening settings.
+        alert.addButton(withTitle: "Check Again")
         for item in missing {
             alert.addButton(withTitle: "Open \(item.displayName) Settings")
         }
-        // Dismiss option.
         alert.addButton(withTitle: "Later")
 
         let respond = { [weak self] (response: NSApplication.ModalResponse) in
             guard let self else { return }
-
-            // Map response index to button index (first button = .alertFirstButtonReturn = 1000).
             let idx = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-            if idx >= 0 && idx < missing.count {
-                NSWorkspace.shared.open(missing[idx].settingsURL)
-                // Watch for the permission being granted while settings is open.
-                self.pollUntilGranted(
-                    kind: missing[idx].kind,
-                    parentWindow: parentWindow,
-                    completion: completion
-                )
+
+            if idx == 0 {
+                // "Check Again" — re-evaluate immediately
+                if self.allGranted {
+                    completion(true)
+                } else {
+                    self.showPermissionAlert(in: parentWindow, completion: completion)
+                }
+            } else if idx >= 1 && idx <= missing.count {
+                // "Open X Settings" — open the relevant pane, then poll
+                let item = missing[idx - 1]
+                NSWorkspace.shared.open(item.settingsURL)
+                self.pollUntilGranted(kind: item.kind,
+                                      parentWindow: parentWindow,
+                                      completion: completion)
             } else {
-                // "Later" pressed — return current state.
+                // "Later"
                 completion(self.allGranted)
             }
         }
 
         if let parentWindow {
-            alert.beginSheetModal(for: parentWindow) { response in
-                respond(response)
-            }
+            alert.beginSheetModal(for: parentWindow) { respond($0) }
         } else {
-            let response = alert.runModal()
-            respond(response)
+            respond(alert.runModal())
         }
     }
 
@@ -134,35 +138,34 @@ final class PermissionManager {
         return list
     }
 
-    // MARK: - Polling after the user visits System Settings
+    // MARK: - Polling
 
-    /// Polls every second for up to 60 s waiting for @p kind to be granted.
-    /// When granted (or timed out), re-evaluates allGranted and either
-    /// completes or shows the alert again for any remaining missing items.
+    /// Polls every second for up to 60 s waiting for a specific permission.
+    /// When granted, re-evaluates allGranted and either completes or re-shows
+    /// the alert for any remaining missing permissions.
     private func pollUntilGranted(
         kind: PermissionKind,
         parentWindow: NSWindow?,
         completion: @escaping (Bool) -> Void
     ) {
         var attempts = 0
-        let maxAttempts = 60
 
         func check() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 guard let self else { return }
                 attempts += 1
-                let granted = kind == .accessibility ? self.hasAccessibility : self.hasScreenRecording
+                let granted = kind == .accessibility
+                    ? self.hasAccessibility
+                    : self.hasScreenRecording
                 if granted {
-                    // This permission is now granted — re-enter to check for others.
                     if self.allGranted {
                         completion(true)
                     } else {
                         self.showPermissionAlert(in: parentWindow, completion: completion)
                     }
-                } else if attempts < maxAttempts {
+                } else if attempts < 60 {
                     check()
                 } else {
-                    // Timed out — user probably ignored System Settings.
                     completion(false)
                 }
             }
