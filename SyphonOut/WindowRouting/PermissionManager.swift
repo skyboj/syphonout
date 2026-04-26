@@ -21,10 +21,11 @@ final class PermissionManager {
         AXIsProcessTrusted()
     }
 
-    /// Synchronous Screen Recording check via CoreGraphics preflight
-    /// (does NOT trigger the system prompt — just reads the current grant state).
+    /// Screen Recording check. Uses CGRequestScreenCaptureAccess() which both
+    /// reads the current state AND triggers the system prompt on first call,
+    /// causing macOS to add the app to System Settings → Privacy → Screen Recording.
     var hasScreenRecording: Bool {
-        CGPreflightScreenCaptureAccess()
+        CGRequestScreenCaptureAccess()
     }
 
     var allGranted: Bool {
