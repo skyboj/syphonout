@@ -16,11 +16,15 @@ final class PermissionManager {
 
     // MARK: - Permission state
 
-    /// Accessibility check + prompt. `AXIsProcessTrustedWithOptions` with
-    /// kAXTrustedCheckOptionPrompt:true both reads current state AND causes
-    /// macOS to add this binary to System Settings → Privacy → Accessibility
-    /// (same binary-path registration behaviour as CGRequestScreenCaptureAccess).
+    /// Silent accessibility check — no prompt, no dialog.
     var hasAccessibility: Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// Registers this binary with macOS and opens the Accessibility pane.
+    /// Call once when the user needs to grant access — not on every check.
+    @discardableResult
+    private func requestAccessibility() -> Bool {
         let opts = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(opts)
     }
@@ -59,6 +63,13 @@ final class PermissionManager {
     ) {
         let missing = buildMissingList()
         guard !missing.isEmpty else { completion(true); return }
+
+        // Register the binary with the system for any missing permissions.
+        // This is a one-shot call that opens System Settings and adds the app
+        // to the relevant Privacy pane — subsequent checks remain silent.
+        if missing.contains(where: { $0.kind == .accessibility }) {
+            requestAccessibility()
+        }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
