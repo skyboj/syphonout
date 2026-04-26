@@ -2,10 +2,9 @@ import AppKit
 import ScreenCaptureKit
 
 /// Entry-point controller for the Window Routing module.
-/// Hosts the routing panel: a live window list (WindowInventory) displayed
-/// in an NSTableView with app icon, app name, and window title columns.
+/// Hosts the routing panel: a live window list (WindowInventory) + move controls.
 ///
-/// Steps 3–4 will add WindowMover and OutputSlot integration here.
+/// Step 4 will add OutputSlot capture integration.
 final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate {
 
     static let shared = WindowRoutingWindowController()
@@ -17,6 +16,12 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     private var statusLabel: NSTextField!
     private var refreshButton: NSButton!
 
+    // Bottom action bar
+    private var screenPopup: NSPopUpButton!
+    private var moveButton: NSButton!
+    private var moveFillButton: NSButton!
+    private var actionStatusLabel: NSTextField!
+
     // MARK: - Data
 
     private let inventory = WindowInventory()
@@ -26,13 +31,13 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 440),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Window Routing"
-        window.minSize = NSSize(width: 480, height: 320)
+        window.minSize = NSSize(width: 500, height: 360)
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -44,7 +49,6 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
 
     // MARK: - Show
 
-    /// Called from the menu bar. Checks permissions, then shows the window.
     func showRouting() {
         PermissionManager.shared.requirePermissions(in: nil) { [weak self] granted in
             guard granted else { return }
@@ -58,26 +62,25 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     private func buildUI() {
         guard let content = window?.contentView else { return }
 
-        // ── Top toolbar area ──────────────────────────────────────────────────
-        let toolbarHeight: CGFloat = 36
-        let toolbarView = NSView()
-        toolbarView.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(toolbarView)
+        // ── Toolbar ───────────────────────────────────────────────────────────
+        let toolbar = NSView()
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(toolbar)
 
         let titleLabel = makeLabel("On-Screen Windows", size: 13, bold: true)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        toolbarView.addSubview(titleLabel)
+        toolbar.addSubview(titleLabel)
 
         statusLabel = makeLabel("", size: 11, bold: false)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        toolbarView.addSubview(statusLabel)
+        toolbar.addSubview(statusLabel)
 
         refreshButton = NSButton(title: "Refresh", target: self, action: #selector(manualRefresh))
         refreshButton.bezelStyle = .rounded
         refreshButton.controlSize = .small
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        toolbarView.addSubview(refreshButton)
+        toolbar.addSubview(refreshButton)
 
         // ── Table ─────────────────────────────────────────────────────────────
         tableView = NSTableView()
@@ -89,7 +92,7 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         addColumn(id: "icon",    title: "",            width: 20,  minWidth: 20,  maxWidth: 20,  resizable: false)
         addColumn(id: "app",     title: "Application", width: 160, minWidth: 100, maxWidth: 260, resizable: true)
         addColumn(id: "window",  title: "Window",      width: 280, minWidth: 120, maxWidth: 500, resizable: true)
-        addColumn(id: "display", title: "Display",     width: 100, minWidth: 80,  maxWidth: 160, resizable: true)
+        addColumn(id: "display", title: "Display",     width: 120, minWidth: 80,  maxWidth: 200, resizable: true)
 
         tableView.dataSource = self
         tableView.delegate   = self
@@ -103,49 +106,129 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(scrollView)
 
-        // ── Bottom status bar ─────────────────────────────────────────────────
-        let bottomBar = NSView()
-        bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(bottomBar)
+        // ── Action bar ────────────────────────────────────────────────────────
+        let actionBar = NSView()
+        actionBar.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(actionBar)
+
+        let toLabel = makeLabel("Move to:", size: 12, bold: false)
+        toLabel.translatesAutoresizingMaskIntoConstraints = false
+        actionBar.addSubview(toLabel)
+
+        screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        screenPopup.controlSize = .regular
+        screenPopup.translatesAutoresizingMaskIntoConstraints = false
+        screenPopup.target = self
+        screenPopup.action = #selector(screenPopupChanged)
+        actionBar.addSubview(screenPopup)
+
+        moveButton = NSButton(title: "Move", target: self, action: #selector(moveWindow))
+        moveButton.bezelStyle = .rounded
+        moveButton.isEnabled = false
+        moveButton.translatesAutoresizingMaskIntoConstraints = false
+        actionBar.addSubview(moveButton)
+
+        moveFillButton = NSButton(title: "Move & Fill", target: self, action: #selector(moveAndFillWindow))
+        moveFillButton.bezelStyle = .rounded
+        moveFillButton.isEnabled = false
+        moveFillButton.translatesAutoresizingMaskIntoConstraints = false
+        actionBar.addSubview(moveFillButton)
+
+        actionStatusLabel = makeLabel("", size: 11, bold: false)
+        actionStatusLabel.textColor = .secondaryLabelColor
+        actionStatusLabel.translatesAutoresizingMaskIntoConstraints = false
+        actionBar.addSubview(actionStatusLabel)
+
+        // ── Bottom count bar ──────────────────────────────────────────────────
+        let countBar = NSView()
+        countBar.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(countBar)
 
         let countLabel = makeLabel("", size: 11, bold: false)
         countLabel.textColor = .tertiaryLabelColor
+        countLabel.tag = 42
         countLabel.translatesAutoresizingMaskIntoConstraints = false
-        countLabel.tag = 42   // reuse via viewWithTag
-        bottomBar.addSubview(countLabel)
+        countBar.addSubview(countLabel)
 
-        // ── Auto-layout ───────────────────────────────────────────────────────
+        // ── Constraints ───────────────────────────────────────────────────────
         NSLayoutConstraint.activate([
-            // Toolbar
-            toolbarView.topAnchor.constraint(equalTo: content.topAnchor),
-            toolbarView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            toolbarView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            toolbarView.heightAnchor.constraint(equalToConstant: toolbarHeight),
-
-            titleLabel.leadingAnchor.constraint(equalTo: toolbarView.leadingAnchor, constant: 12),
-            titleLabel.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
-
+            // Toolbar (top)
+            toolbar.topAnchor.constraint(equalTo: content.topAnchor),
+            toolbar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 36),
+            titleLabel.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 12),
+            titleLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             statusLabel.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 10),
-            statusLabel.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
+            statusLabel.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            refreshButton.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
+            refreshButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
-            refreshButton.trailingAnchor.constraint(equalTo: toolbarView.trailingAnchor, constant: -12),
-            refreshButton.centerYAnchor.constraint(equalTo: toolbarView.centerYAnchor),
-
-            // Table scroll view
-            scrollView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
+            // Table (middle, stretches)
+            scrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomBar.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: actionBar.topAnchor),
 
-            // Bottom bar
-            bottomBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            bottomBar.heightAnchor.constraint(equalToConstant: 24),
+            // Action bar
+            actionBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            actionBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            actionBar.bottomAnchor.constraint(equalTo: countBar.topAnchor),
+            actionBar.heightAnchor.constraint(equalToConstant: 44),
+            toLabel.leadingAnchor.constraint(equalTo: actionBar.leadingAnchor, constant: 12),
+            toLabel.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            screenPopup.leadingAnchor.constraint(equalTo: toLabel.trailingAnchor, constant: 8),
+            screenPopup.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            screenPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            moveButton.leadingAnchor.constraint(equalTo: screenPopup.trailingAnchor, constant: 10),
+            moveButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            moveFillButton.leadingAnchor.constraint(equalTo: moveButton.trailingAnchor, constant: 6),
+            moveFillButton.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            actionStatusLabel.leadingAnchor.constraint(equalTo: moveFillButton.trailingAnchor, constant: 12),
+            actionStatusLabel.centerYAnchor.constraint(equalTo: actionBar.centerYAnchor),
+            actionStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: actionBar.trailingAnchor, constant: -12),
 
-            countLabel.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 12),
-            countLabel.centerYAnchor.constraint(equalTo: bottomBar.centerYAnchor),
+            // Count bar (bottom)
+            countBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            countBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            countBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            countBar.heightAnchor.constraint(equalToConstant: 24),
+            countLabel.leadingAnchor.constraint(equalTo: countBar.leadingAnchor, constant: 12),
+            countLabel.centerYAnchor.constraint(equalTo: countBar.centerYAnchor),
         ])
+
+        rebuildScreenPopup()
+    }
+
+    // MARK: - Screen popup
+
+    private func rebuildScreenPopup() {
+        screenPopup.removeAllItems()
+        for screen in NSScreen.screens {
+            screenPopup.addItem(withTitle: screen.localizedName)
+        }
+        // Observe display config changes
+        NotificationCenter.default.removeObserver(self,
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self,
+            selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil)
+    }
+
+    @objc private func screensChanged() {
+        rebuildScreenPopup()
+    }
+
+    @objc private func screenPopupChanged() {
+        // No-op — selection is read at move time
+    }
+
+    private var selectedScreen: NSScreen? {
+        let idx = screenPopup.indexOfSelectedItem
+        let screens = NSScreen.screens
+        guard idx >= 0, idx < screens.count else { return screens.first }
+        return screens[idx]
     }
 
     // MARK: - Inventory wiring
@@ -157,6 +240,7 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             self.tableView.reloadData()
             self.updateCountLabel()
             self.statusLabel.stringValue = "Updated \(shortTime())"
+            self.updateActionBar()
         }
     }
 
@@ -164,10 +248,7 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
 
     func windowDidBecomeKey(_ notification: Notification) {
         inventory.start()
-        // Force an immediate refresh so the table fills right away
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.inventory.onUpdate?(self?.inventory.windows ?? [])
-        }
+        rebuildScreenPopup()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -182,6 +263,55 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         inventory.start()
     }
 
+    @objc private func moveWindow() {
+        performMove(resize: false)
+    }
+
+    @objc private func moveAndFillWindow() {
+        performMove(resize: true)
+    }
+
+    private func performMove(resize: Bool) {
+        guard let info = selectedWindowInfo,
+              let screen = selectedScreen else { return }
+
+        let result = WindowMover.move(info, to: screen, resize: resize)
+        switch result {
+        case .success:
+            let verb = resize ? "moved & filled" : "moved"
+            actionStatusLabel.stringValue = "✓ \(info.appName): \(info.displayTitle) \(verb) to \(screen.localizedName)"
+            actionStatusLabel.textColor = .labelColor
+            // Refresh inventory shortly so the table updates with new position
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.inventory.stop()
+                self?.inventory.start()
+            }
+        case .noAccessibility:
+            actionStatusLabel.stringValue = "✗ Accessibility permission required"
+            actionStatusLabel.textColor = .systemRed
+        case .windowNotFound:
+            actionStatusLabel.stringValue = "✗ Window no longer on screen"
+            actionStatusLabel.textColor = .systemOrange
+        case .axError(let err):
+            actionStatusLabel.stringValue = "✗ AX error \(err.rawValue)"
+            actionStatusLabel.textColor = .systemRed
+        }
+    }
+
+    // MARK: - Selection helpers
+
+    private var selectedWindowInfo: WindowInfo? {
+        let row = tableView.selectedRow
+        guard row >= 0, row < windows.count else { return nil }
+        return windows[row]
+    }
+
+    private func updateActionBar() {
+        let hasSelection = tableView.selectedRow >= 0
+        moveButton.isEnabled     = hasSelection
+        moveFillButton.isEnabled = hasSelection
+    }
+
     // MARK: - Helpers
 
     private func addColumn(id: String, title: String, width: CGFloat,
@@ -191,20 +321,13 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         col.width = width
         col.minWidth = minWidth
         col.maxWidth = maxWidth
-        if resizable {
-            col.resizingMask = [.autoresizingMask, .userResizingMask]
-        } else {
-            col.resizingMask = []
-        }
+        col.resizingMask = resizable ? [.autoresizingMask, .userResizingMask] : []
         tableView.addTableColumn(col)
     }
 
     private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
-        let f = bold
-            ? NSFont.boldSystemFont(ofSize: size)
-            : NSFont.systemFont(ofSize: size)
         let label = NSTextField(labelWithString: text)
-        label.font = f
+        label.font = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
         return label
     }
 
@@ -221,24 +344,19 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         return f.string(from: Date())
     }
 
-    /// Returns the display name for the screen that contains the given frame.
+    /// Converts an SCWindow frame (Quartz coords) to the name of the containing NSScreen.
     private func displayName(for frame: CGRect) -> String {
-        // NSScreen coordinate system is flipped vs Quartz — convert Y
-        let screens = NSScreen.screens
-        // Find the NSScreen whose frame contains the window's midpoint
+        let primary = NSScreen.screens.first?.frame.height ?? 0
         let mid = CGPoint(x: frame.midX, y: frame.midY)
-        for screen in screens {
-            // Convert Quartz → AppKit: flip Y relative to the primary screen height
-            let primary = screens.first?.frame.height ?? 0
-            let appKitRect = CGRect(
+        for screen in NSScreen.screens {
+            // Convert NSScreen (AppKit, bottom-left origin) → Quartz (top-left origin)
+            let quartzRect = CGRect(
                 x: screen.frame.origin.x,
                 y: primary - screen.frame.origin.y - screen.frame.height,
                 width: screen.frame.width,
                 height: screen.frame.height
             )
-            if appKitRect.contains(mid) {
-                return screen.localizedName
-            }
+            if quartzRect.contains(mid) { return screen.localizedName }
         }
         return "Unknown"
     }
@@ -254,55 +372,61 @@ extension WindowRoutingWindowController: NSTableViewDataSource {
 
 extension WindowRoutingWindowController: NSTableViewDelegate {
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateActionBar()
+        // Clear stale status message when the user picks a different row
+        actionStatusLabel.stringValue = ""
+        actionStatusLabel.textColor = .secondaryLabelColor
+    }
+
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
+                   row: Int) -> NSView? {
         guard row < windows.count else { return nil }
         let info = windows[row]
         let colID = tableColumn?.identifier.rawValue ?? ""
 
         switch colID {
         case "icon":
-            let cell = dequeueCell(tableView, id: "icon") as? NSImageView
-                ?? NSImageView()
+            let cell = (tableView.makeView(
+                withIdentifier: NSUserInterfaceItemIdentifier("icon"), owner: nil)
+                as? NSImageView) ?? NSImageView()
             cell.identifier = NSUserInterfaceItemIdentifier("icon")
             cell.image = info.appIcon
             cell.imageScaling = .scaleProportionallyUpOrDown
             return cell
 
         case "app":
-            let cell = dequeueTextCell(tableView, id: "app")
-            cell.stringValue = info.appName
-            return cell
+            return makeTextCell(tableView, id: "app", value: info.appName,
+                                color: .labelColor)
 
         case "window":
-            let cell = dequeueTextCell(tableView, id: "window")
-            cell.stringValue = info.displayTitle
-            cell.textColor = info.title.isEmpty ? .tertiaryLabelColor : .labelColor
-            return cell
+            return makeTextCell(tableView, id: "window", value: info.displayTitle,
+                                color: info.title.isEmpty ? .tertiaryLabelColor : .labelColor)
 
         case "display":
-            let cell = dequeueTextCell(tableView, id: "display")
-            cell.stringValue = displayName(for: info.frame)
-            cell.textColor = .secondaryLabelColor
-            return cell
+            return makeTextCell(tableView, id: "display", value: displayName(for: info.frame),
+                                color: .secondaryLabelColor)
 
         default:
             return nil
         }
     }
 
-    private func dequeueCell(_ tv: NSTableView, id: String) -> NSView? {
-        tv.makeView(withIdentifier: NSUserInterfaceItemIdentifier(id), owner: nil)
-    }
-
-    private func dequeueTextCell(_ tv: NSTableView, id: String) -> NSTextField {
-        if let existing = tv.makeView(withIdentifier: NSUserInterfaceItemIdentifier(id), owner: nil) as? NSTextField {
-            existing.textColor = .labelColor
-            return existing
+    private func makeTextCell(_ tv: NSTableView, id: String,
+                               value: String, color: NSColor) -> NSTextField {
+        let cell: NSTextField
+        if let existing = tv.makeView(
+            withIdentifier: NSUserInterfaceItemIdentifier(id), owner: nil) as? NSTextField {
+            cell = existing
+        } else {
+            cell = NSTextField(labelWithString: "")
+            cell.identifier = NSUserInterfaceItemIdentifier(id)
+            cell.font = NSFont.systemFont(ofSize: 12)
+            cell.lineBreakMode = .byTruncatingTail
         }
-        let label = NSTextField(labelWithString: "")
-        label.identifier = NSUserInterfaceItemIdentifier(id)
-        label.font = NSFont.systemFont(ofSize: 12)
-        label.lineBreakMode = .byTruncatingTail
-        return label
+        cell.stringValue = value
+        cell.textColor = color
+        return cell
     }
 }

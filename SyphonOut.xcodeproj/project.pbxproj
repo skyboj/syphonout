@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */; };
 		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
 		2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMover.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventory.swift; sourceTree = "<group>"; };
 		17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputWindowController.swift; sourceTree = "<group>"; };
 		2903710A6525AA33741D6B84 /* libsyphonout_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libsyphonout_core.a; sourceTree = "<group>"; };
@@ -173,6 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */,
+				C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */,
 				C741475E3337445283B7FC76 /* PermissionManager.swift */,
 				2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */,
 			);
@@ -278,6 +281,7 @@
 				45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */,
 				1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */,
 				B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */,
+				D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */,
 				27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */,
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
 				BF6EE4EA0C9604908FF9FA9F /* PreviewRenderer.swift in Sources */,
