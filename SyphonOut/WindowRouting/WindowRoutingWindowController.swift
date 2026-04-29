@@ -1,42 +1,42 @@
 import AppKit
 import ScreenCaptureKit
 
-/// Window Routing panel — live window inventory, move controls, and window capture.
+/// Window Routing panel.
 ///
-/// Layout (top → bottom):
-///   • Toolbar:     title, last-updated timestamp, Refresh button
-///   • Table:       icon / Application / Window / Display
-///   • Move bar:    "Move to:" screen popup, Move, Move & Fill
-///   • Capture bar: "Capture to:" VD popup, Capture, Move & Capture, Stop
-///   • Count bar:   window count
+/// Layout:
+///   • Toolbar    — title, timestamp, Refresh
+///   • Table      — icon / Application / Window / Display  (shared)
+///   • Tab view   — "Move" tab | "Capture" tab
+///   • Count bar  — window count
 final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate {
 
     static let shared = WindowRoutingWindowController()
 
     // MARK: - Subviews
 
-    private var scrollView:   NSScrollView!
-    private var tableView:    NSTableView!
-    private var statusLabel:  NSTextField!
+    private var scrollView:    NSScrollView!
+    private var tableView:     NSTableView!
+    private var statusLabel:   NSTextField!
     private var refreshButton: NSButton!
+    private var tabView:       NSTabView!
 
-    // Move bar
+    // Move tab
     private var screenPopup:    NSPopUpButton!
     private var moveButton:     NSButton!
     private var moveFillButton: NSButton!
+    private var moveStatusLabel: NSTextField!
 
-    // Capture bar
-    private var vdPopup:           NSPopUpButton!
-    private var captureButton:     NSButton!
-    private var moveCaptureButton: NSButton!
-    private var stopButton:        NSButton!
+    // Capture tab
+    private var vdPopup:            NSPopUpButton!
+    private var captureButton:      NSButton!
+    private var moveCaptureButton:  NSButton!
+    private var stopButton:         NSButton!
     private var captureStatusLabel: NSTextField!
 
     // MARK: - Data
 
     private let inventory = WindowInventory()
-    private var windows:   [WindowInfo] = []
-
+    private var windows:  [WindowInfo] = []
     private var captureObservers: [NSObjectProtocol] = []
 
     // MARK: - Init
@@ -76,18 +76,18 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         guard let content = window?.contentView else { return }
 
         // ── Toolbar ───────────────────────────────────────────────────────────
-        let toolbar = makeContainer()
+        let toolbar = box()
         content.addSubview(toolbar)
 
-        let titleLabel = makeLabel("On-Screen Windows", size: 13, bold: true)
+        let titleLabel = label("On-Screen Windows", size: 13, bold: true)
         toolbar.addSubview(titleLabel)
 
-        statusLabel = makeLabel("", size: 11, bold: false)
+        statusLabel = label("", size: 11, bold: false)
         statusLabel.textColor = .secondaryLabelColor
         toolbar.addSubview(statusLabel)
 
         refreshButton = NSButton(title: "Refresh", target: self, action: #selector(manualRefresh))
-        refreshButton.bezelStyle = .rounded
+        refreshButton.bezelStyle  = .rounded
         refreshButton.controlSize = .small
         toolbar.addSubview(refreshButton)
 
@@ -97,102 +97,49 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         tableView.allowsMultipleSelection = false
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.rowHeight = 20
-        addColumn("icon",    "",            20,  20,  20,  false)
-        addColumn("app",     "Application", 160, 100, 260, true)
-        addColumn("window",  "Window",      280, 120, 500, true)
-        addColumn("display", "Display",     120, 80,  200, true)
+        col("icon",    "",            20,  20,  20,  false)
+        col("app",     "Application", 160, 100, 260, true)
+        col("window",  "Window",      280, 120, 500, true)
+        col("display", "Display",     120,  80, 200, true)
         tableView.dataSource = self
         tableView.delegate   = self
 
         scrollView = NSScrollView()
-        scrollView.documentView = tableView
+        scrollView.documentView       = tableView
         scrollView.hasVerticalScroller   = true
         scrollView.hasHorizontalScroller = false
-        scrollView.borderType            = .bezelBorder
-        scrollView.autohidesScrollers    = true
+        scrollView.borderType         = .bezelBorder
+        scrollView.autohidesScrollers = true
         content.addSubview(scrollView)
 
-        // ── Move bar ──────────────────────────────────────────────────────────
-        let moveBar = makeContainer()
-        content.addSubview(moveBar)
+        // ── Tab view ──────────────────────────────────────────────────────────
+        tabView = NSTabView()
+        tabView.tabViewType = .topTabsBezelBorder
+        tabView.controlSize = .regular
+        content.addSubview(tabView)
 
-        let toLabel = makeLabel("Move to:", size: 12, bold: false)
-        moveBar.addSubview(toLabel)
-
-        screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        screenPopup.controlSize = .regular
-        moveBar.addSubview(screenPopup)
-
-        moveButton = NSButton(title: "Move", target: self, action: #selector(moveWindow))
-        moveButton.bezelStyle = .rounded
-        moveButton.isEnabled = false
-        moveBar.addSubview(moveButton)
-
-        moveFillButton = NSButton(title: "Move & Fill", target: self, action: #selector(moveAndFillWindow))
-        moveFillButton.bezelStyle = .rounded
-        moveFillButton.isEnabled = false
-        moveBar.addSubview(moveFillButton)
-
-        // Separator line
-        let sep = NSBox()
-        sep.boxType = .separator
-        content.addSubview(sep)
-
-        // ── Capture bar ───────────────────────────────────────────────────────
-        let captureBar = makeContainer()
-        content.addSubview(captureBar)
-
-        let captureToLabel = makeLabel("Capture to:", size: 12, bold: false)
-        captureBar.addSubview(captureToLabel)
-
-        vdPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        vdPopup.controlSize = .regular
-        captureBar.addSubview(vdPopup)
-
-        captureButton = NSButton(title: "Capture", target: self, action: #selector(startCaptureOnly))
-        captureButton.bezelStyle = .rounded
-        captureButton.isEnabled = false
-        captureBar.addSubview(captureButton)
-
-        moveCaptureButton = NSButton(title: "Move & Capture", target: self, action: #selector(moveAndCapture))
-        moveCaptureButton.bezelStyle = .rounded
-        moveCaptureButton.isEnabled = false
-        captureBar.addSubview(moveCaptureButton)
-
-        stopButton = NSButton(title: "Stop", target: self, action: #selector(stopCapture))
-        stopButton.bezelStyle = .rounded
-        stopButton.isEnabled = false
-        captureBar.addSubview(stopButton)
-
-        captureStatusLabel = makeLabel("", size: 11, bold: false)
-        captureStatusLabel.textColor = .secondaryLabelColor
-        captureBar.addSubview(captureStatusLabel)
+        tabView.addTabViewItem(buildMoveTab())
+        tabView.addTabViewItem(buildCaptureTab())
 
         // ── Count bar ─────────────────────────────────────────────────────────
-        let countBar = makeContainer()
+        let countBar = box()
         content.addSubview(countBar)
 
-        let countLabel = makeLabel("", size: 11, bold: false)
+        let countLabel = label("", size: 11, bold: false)
         countLabel.textColor = .tertiaryLabelColor
         countLabel.tag = 42
         countBar.addSubview(countLabel)
 
         // ── Auto-layout ───────────────────────────────────────────────────────
-        let views: [String: NSView] = [
-            "toolbar": toolbar, "scroll": scrollView,
-            "moveBar": moveBar, "sep": sep,
-            "captureBar": captureBar, "countBar": countBar,
-        ]
-        views.values.forEach { $0.translatesAutoresizingMaskIntoConstraints = false }
-        [titleLabel, statusLabel, refreshButton,
-         toLabel, screenPopup, moveButton, moveFillButton,
-         captureToLabel, vdPopup, captureButton, moveCaptureButton,
-         stopButton, captureStatusLabel, countLabel].forEach {
+        [toolbar, scrollView, tabView, countBar].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
+        [titleLabel, statusLabel, refreshButton].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            // Toolbar
             toolbar.topAnchor.constraint(equalTo: content.topAnchor),
             toolbar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
@@ -204,54 +151,16 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             refreshButton.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
             refreshButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
 
-            // Table
             scrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: moveBar.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: tabView.topAnchor),
 
-            // Move bar
-            moveBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            moveBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            moveBar.bottomAnchor.constraint(equalTo: sep.topAnchor),
-            moveBar.heightAnchor.constraint(equalToConstant: 44),
-            toLabel.leadingAnchor.constraint(equalTo: moveBar.leadingAnchor, constant: 12),
-            toLabel.centerYAnchor.constraint(equalTo: moveBar.centerYAnchor),
-            screenPopup.leadingAnchor.constraint(equalTo: toLabel.trailingAnchor, constant: 8),
-            screenPopup.centerYAnchor.constraint(equalTo: moveBar.centerYAnchor),
-            screenPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            moveButton.leadingAnchor.constraint(equalTo: screenPopup.trailingAnchor, constant: 10),
-            moveButton.centerYAnchor.constraint(equalTo: moveBar.centerYAnchor),
-            moveFillButton.leadingAnchor.constraint(equalTo: moveButton.trailingAnchor, constant: 6),
-            moveFillButton.centerYAnchor.constraint(equalTo: moveBar.centerYAnchor),
+            tabView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            tabView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            tabView.bottomAnchor.constraint(equalTo: countBar.topAnchor),
+            tabView.heightAnchor.constraint(equalToConstant: 100),
 
-            // Separator
-            sep.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            sep.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            sep.bottomAnchor.constraint(equalTo: captureBar.topAnchor),
-            sep.heightAnchor.constraint(equalToConstant: 1),
-
-            // Capture bar
-            captureBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            captureBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            captureBar.bottomAnchor.constraint(equalTo: countBar.topAnchor),
-            captureBar.heightAnchor.constraint(equalToConstant: 44),
-            captureToLabel.leadingAnchor.constraint(equalTo: captureBar.leadingAnchor, constant: 12),
-            captureToLabel.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            vdPopup.leadingAnchor.constraint(equalTo: captureToLabel.trailingAnchor, constant: 8),
-            vdPopup.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            vdPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            captureButton.leadingAnchor.constraint(equalTo: vdPopup.trailingAnchor, constant: 10),
-            captureButton.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            moveCaptureButton.leadingAnchor.constraint(equalTo: captureButton.trailingAnchor, constant: 6),
-            moveCaptureButton.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            stopButton.leadingAnchor.constraint(equalTo: moveCaptureButton.trailingAnchor, constant: 6),
-            stopButton.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            captureStatusLabel.leadingAnchor.constraint(equalTo: stopButton.trailingAnchor, constant: 10),
-            captureStatusLabel.centerYAnchor.constraint(equalTo: captureBar.centerYAnchor),
-            captureStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: captureBar.trailingAnchor, constant: -12),
-
-            // Count bar
             countBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             countBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             countBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
@@ -264,6 +173,109 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         rebuildVDPopup()
     }
 
+    // MARK: - Move tab
+
+    private func buildMoveTab() -> NSTabViewItem {
+        let item = NSTabViewItem()
+        item.label = "Move"
+
+        let v = box()
+        item.view = v
+
+        let toLabel = label("Move to:", size: 12, bold: false)
+
+        screenPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        screenPopup.controlSize = .regular
+
+        moveButton = NSButton(title: "Move", target: self, action: #selector(moveWindow))
+        moveButton.bezelStyle = .rounded
+        moveButton.isEnabled  = false
+
+        moveFillButton = NSButton(title: "Move & Fill", target: self, action: #selector(moveAndFillWindow))
+        moveFillButton.bezelStyle = .rounded
+        moveFillButton.isEnabled  = false
+
+        moveStatusLabel = label("", size: 11, bold: false)
+        moveStatusLabel.textColor = .secondaryLabelColor
+
+        [toLabel, screenPopup, moveButton, moveFillButton, moveStatusLabel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            v.addSubview($0)
+        }
+
+        NSLayoutConstraint.activate([
+            toLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
+            toLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            screenPopup.leadingAnchor.constraint(equalTo: toLabel.trailingAnchor, constant: 8),
+            screenPopup.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            screenPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            moveButton.leadingAnchor.constraint(equalTo: screenPopup.trailingAnchor, constant: 10),
+            moveButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            moveFillButton.leadingAnchor.constraint(equalTo: moveButton.trailingAnchor, constant: 6),
+            moveFillButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            moveStatusLabel.leadingAnchor.constraint(equalTo: moveFillButton.trailingAnchor, constant: 12),
+            moveStatusLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            moveStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -12),
+        ])
+
+        return item
+    }
+
+    // MARK: - Capture tab
+
+    private func buildCaptureTab() -> NSTabViewItem {
+        let item = NSTabViewItem()
+        item.label = "Capture"
+
+        let v = box()
+        item.view = v
+
+        let captureToLabel = label("Capture to:", size: 12, bold: false)
+
+        vdPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        vdPopup.controlSize = .regular
+
+        captureButton = NSButton(title: "Capture", target: self, action: #selector(startCaptureOnly))
+        captureButton.bezelStyle = .rounded
+        captureButton.isEnabled  = false
+
+        moveCaptureButton = NSButton(title: "Move & Capture", target: self, action: #selector(moveAndCapture))
+        moveCaptureButton.bezelStyle = .rounded
+        moveCaptureButton.isEnabled  = false
+
+        stopButton = NSButton(title: "Stop", target: self, action: #selector(stopCapture))
+        stopButton.bezelStyle = .rounded
+        stopButton.isEnabled  = false
+
+        captureStatusLabel = label("", size: 11, bold: false)
+        captureStatusLabel.textColor = .secondaryLabelColor
+
+        [captureToLabel, vdPopup, captureButton, moveCaptureButton,
+         stopButton, captureStatusLabel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            v.addSubview($0)
+        }
+
+        NSLayoutConstraint.activate([
+            captureToLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
+            captureToLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            vdPopup.leadingAnchor.constraint(equalTo: captureToLabel.trailingAnchor, constant: 8),
+            vdPopup.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            vdPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            captureButton.leadingAnchor.constraint(equalTo: vdPopup.trailingAnchor, constant: 10),
+            captureButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            moveCaptureButton.leadingAnchor.constraint(equalTo: captureButton.trailingAnchor, constant: 6),
+            moveCaptureButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            stopButton.leadingAnchor.constraint(equalTo: moveCaptureButton.trailingAnchor, constant: 6),
+            stopButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            captureStatusLabel.leadingAnchor.constraint(equalTo: stopButton.trailingAnchor, constant: 10),
+            captureStatusLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            captureStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -12),
+        ])
+
+        return item
+    }
+
     // MARK: - Inventory
 
     private func wireInventory() {
@@ -273,29 +285,26 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             self.tableView.reloadData()
             self.updateCountLabel()
             self.statusLabel.stringValue = "Updated \(shortTime())"
-            self.updateActionBar()
+            self.updateActionBars()
         }
     }
 
-    // MARK: - Capture notifications
-
     private func wireCapturNotifications() {
-        let started = NotificationCenter.default.addObserver(
+        let obs1 = NotificationCenter.default.addObserver(
             forName: .windowCaptureStarted, object: nil, queue: .main
-        ) { [weak self] _ in self?.updateActionBar() }
+        ) { [weak self] _ in self?.updateActionBars() }
 
-        let stopped = NotificationCenter.default.addObserver(
+        let obs2 = NotificationCenter.default.addObserver(
             forName: .windowCaptureStopped, object: nil, queue: .main
         ) { [weak self] notif in
-            // Show error if the stream died unexpectedly
             if let error = notif.userInfo?["error"] as? Error {
                 self?.captureStatusLabel.stringValue = "✗ \(error.localizedDescription)"
                 self?.captureStatusLabel.textColor = .systemRed
             }
-            self?.updateActionBar()
+            self?.updateActionBars()
         }
 
-        captureObservers = [started, stopped]
+        captureObservers = [obs1, obs2]
     }
 
     // MARK: - NSWindowDelegate
@@ -315,7 +324,6 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     private func rebuildScreenPopup() {
         screenPopup.removeAllItems()
         NSScreen.screens.forEach { screenPopup.addItem(withTitle: $0.localizedName) }
-
         NotificationCenter.default.removeObserver(self,
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self,
@@ -338,22 +346,18 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     @objc private func screensChanged() { rebuildScreenPopup() }
 
     private var selectedScreen: NSScreen? {
-        let idx = screenPopup.indexOfSelectedItem
         let screens = NSScreen.screens
-        guard idx >= 0, idx < screens.count else { return screens.first }
-        return screens[idx]
+        let i = screenPopup.indexOfSelectedItem
+        return (i >= 0 && i < screens.count) ? screens[i] : screens.first
     }
 
     private var selectedVD: VirtualDisplay? {
-        let idx = VirtualDisplayManager.shared.displays.indices
         let vds = VirtualDisplayManager.shared.displays
         let i = vdPopup.indexOfSelectedItem
-        guard i >= 0, i < vds.count else { return vds.first }
-        return vds[i]
-        _ = idx  // silence unused warning
+        return (i >= 0 && i < vds.count) ? vds[i] : vds.first
     }
 
-    // MARK: - Actions
+    // MARK: - Move actions
 
     @objc private func manualRefresh() {
         statusLabel.stringValue = "Refreshing…"
@@ -363,31 +367,31 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     }
 
     @objc private func moveWindow()        { performMove(resize: false) }
-    @objc private func moveAndFillWindow() { performMove(resize: true)  }
+    @objc private func moveAndFillWindow() { performMove(resize: true) }
 
     private func performMove(resize: Bool) {
         guard let info = selectedWindowInfo, let screen = selectedScreen else { return }
-        applyMove(info: info, screen: screen, resize: resize)
-    }
-
-    @discardableResult
-    private func applyMove(info: WindowInfo, screen: NSScreen, resize: Bool) -> Bool {
         switch WindowMover.move(info, to: screen, resize: resize) {
         case .success:
-            // Re-scan after a short delay so the table reflects new position
+            let verb = resize ? "filled on" : "moved to"
+            moveStatusLabel.stringValue = "✓ \(info.appName) \(verb) \(screen.localizedName)"
+            moveStatusLabel.textColor = .labelColor
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.inventory.stop(); self?.inventory.start()
             }
-            return true
         case .noAccessibility:
-            showMoveError("Accessibility permission required")
+            moveStatusLabel.stringValue = "✗ Accessibility permission required — enable in System Settings → Privacy"
+            moveStatusLabel.textColor = .systemRed
         case .windowNotFound:
-            showMoveError("Window no longer on screen")
+            moveStatusLabel.stringValue = "✗ Window no longer on screen"
+            moveStatusLabel.textColor = .systemOrange
         case .axError(let e):
-            showMoveError("AX error \(e.rawValue)")
+            moveStatusLabel.stringValue = "✗ AX error \(e.rawValue)"
+            moveStatusLabel.textColor = .systemRed
         }
-        return false
     }
+
+    // MARK: - Capture actions
 
     @objc private func startCaptureOnly() {
         guard let info = selectedWindowInfo, let vd = selectedVD else { return }
@@ -398,33 +402,27 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         guard let info = selectedWindowInfo,
               let screen = selectedScreen,
               let vd = selectedVD else { return }
-        // Move first (synchronous AX call), then start capture
-        let moved = applyMove(info: info, screen: screen, resize: false)
-        if moved || true {   // attempt capture even if move had issues
-            beginCapture(info: info, vdUUID: vd.id)
-        }
+        // Move first (may fail silently if AX not granted), then capture anyway
+        _ = WindowMover.move(info, to: screen, resize: false)
+        beginCapture(info: info, vdUUID: vd.id)
     }
 
     private func beginCapture(info: WindowInfo, vdUUID: String) {
-        captureStatusLabel.stringValue = "Starting capture…"
+        captureStatusLabel.stringValue = "Starting…"
         captureStatusLabel.textColor = .secondaryLabelColor
-        updateActionBar()
+        updateActionBars()
 
-        WindowCaptureManager.shared.startCapture(
-            windowID: info.id, vdUUID: vdUUID
-        ) { [weak self] error in
+        WindowCaptureManager.shared.startCapture(windowID: info.id, vdUUID: vdUUID) { [weak self] error in
             guard let self else { return }
             if let error {
                 self.captureStatusLabel.stringValue = "✗ \(error.localizedDescription)"
                 self.captureStatusLabel.textColor = .systemRed
             } else {
-                let vdName = VirtualDisplayManager.shared.displays
-                    .first { $0.id == vdUUID }?.name ?? vdUUID
-                self.captureStatusLabel.stringValue =
-                    "● Capturing \(info.appName) → \(vdName)"
+                let vdName = VirtualDisplayManager.shared.displays.first { $0.id == vdUUID }?.name ?? vdUUID
+                self.captureStatusLabel.stringValue = "● \(info.appName) → \(vdName)"
                 self.captureStatusLabel.textColor = .labelColor
             }
-            self.updateActionBar()
+            self.updateActionBars()
         }
     }
 
@@ -433,10 +431,10 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         WindowCaptureManager.shared.stopCapture(windowID: info.id)
         captureStatusLabel.stringValue = "Stopped"
         captureStatusLabel.textColor = .secondaryLabelColor
-        updateActionBar()
+        updateActionBars()
     }
 
-    // MARK: - State helpers
+    // MARK: - State
 
     private var selectedWindowInfo: WindowInfo? {
         let row = tableView.selectedRow
@@ -444,57 +442,44 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         return windows[row]
     }
 
-    private func updateActionBar() {
-        let hasSelection = tableView.selectedRow >= 0
+    private func updateActionBars() {
+        let sel  = tableView.selectedRow >= 0
         let info = selectedWindowInfo
         let capturing = info.map { WindowCaptureManager.shared.isCapturing($0.id) } ?? false
         let hasVDs = !VirtualDisplayManager.shared.displays.isEmpty
 
-        moveButton.isEnabled     = hasSelection
-        moveFillButton.isEnabled = hasSelection
-        captureButton.isEnabled     = hasSelection && hasVDs && !capturing
-        moveCaptureButton.isEnabled = hasSelection && hasVDs && !capturing
-        stopButton.isEnabled        = hasSelection && capturing
+        moveButton.isEnabled     = sel
+        moveFillButton.isEnabled = sel
+        captureButton.isEnabled     = sel && hasVDs && !capturing
+        moveCaptureButton.isEnabled = sel && hasVDs && !capturing
+        stopButton.isEnabled        = sel && capturing
     }
 
-    private func showMoveError(_ msg: String) {
-        // Briefly show in the status label; the capture bar has its own label
-        statusLabel.stringValue = "✗ \(msg)"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.statusLabel.stringValue = ""
-        }
+    // MARK: - Helpers
+
+    private func col(_ id: String, _ title: String,
+                     _ width: CGFloat, _ min: CGFloat, _ max: CGFloat,
+                     _ resizable: Bool) {
+        let c = NSTableColumn(identifier: .init(id))
+        c.title = title; c.width = width; c.minWidth = min; c.maxWidth = max
+        c.resizingMask = resizable ? [.autoresizingMask, .userResizingMask] : []
+        tableView.addTableColumn(c)
     }
 
-    // MARK: - Table helpers
-
-    private func addColumn(_ id: String, _ title: String,
-                           _ width: CGFloat, _ min: CGFloat, _ max: CGFloat,
-                           _ resizable: Bool) {
-        let col = NSTableColumn(identifier: .init(id))
-        col.title    = title
-        col.width    = width
-        col.minWidth = min
-        col.maxWidth = max
-        col.resizingMask = resizable ? [.autoresizingMask, .userResizingMask] : []
-        tableView.addTableColumn(col)
+    private func label(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = bold ? .boldSystemFont(ofSize: size) : .systemFont(ofSize: size)
+        return l
     }
 
-    private func makeLabel(_ text: String, size: CGFloat, bold: Bool) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.font = bold ? .boldSystemFont(ofSize: size) : .systemFont(ofSize: size)
-        return label
-    }
-
-    private func makeContainer() -> NSView {
-        let v = NSView()
-        v.translatesAutoresizingMaskIntoConstraints = false
-        return v
+    private func box() -> NSView {
+        let v = NSView(); v.translatesAutoresizingMaskIntoConstraints = false; return v
     }
 
     private func updateCountLabel() {
-        if let label = window?.contentView?.viewWithTag(42) as? NSTextField {
+        if let l = window?.contentView?.viewWithTag(42) as? NSTextField {
             let n = windows.count
-            label.stringValue = n == 0 ? "No windows" : "\(n) window\(n == 1 ? "" : "s")"
+            l.stringValue = n == 0 ? "No windows" : "\(n) window\(n == 1 ? "" : "s")"
         }
     }
 
@@ -502,15 +487,14 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f.string(from: Date())
     }
 
-    /// Converts an SCWindow frame (Quartz coords) to the containing NSScreen's name.
     private func displayName(for frame: CGRect) -> String {
         let primary = NSScreen.screens.first?.frame.height ?? 0
         let mid = CGPoint(x: frame.midX, y: frame.midY)
         for screen in NSScreen.screens {
-            let qRect = CGRect(x: screen.frame.minX,
-                               y: primary - screen.frame.minY - screen.frame.height,
-                               width: screen.frame.width, height: screen.frame.height)
-            if qRect.contains(mid) { return screen.localizedName }
+            let r = CGRect(x: screen.frame.minX,
+                           y: primary - screen.frame.minY - screen.frame.height,
+                           width: screen.frame.width, height: screen.frame.height)
+            if r.contains(mid) { return screen.localizedName }
         }
         return "Unknown"
     }
@@ -527,16 +511,17 @@ extension WindowRoutingWindowController: NSTableViewDataSource {
 extension WindowRoutingWindowController: NSTableViewDelegate {
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        updateActionBar()
+        updateActionBars()
+        moveStatusLabel.stringValue = ""
+        moveStatusLabel.textColor = .secondaryLabelColor
         captureStatusLabel.stringValue = ""
         captureStatusLabel.textColor = .secondaryLabelColor
-        // If the newly selected window is already being captured, show its status
+
         if let info = selectedWindowInfo,
            WindowCaptureManager.shared.isCapturing(info.id),
            let vdUUID = WindowCaptureManager.shared.vdUUID(for: info.id) {
-            let vdName = VirtualDisplayManager.shared.displays
-                .first { $0.id == vdUUID }?.name ?? vdUUID
-            captureStatusLabel.stringValue = "● Capturing \(info.appName) → \(vdName)"
+            let vdName = VirtualDisplayManager.shared.displays.first { $0.id == vdUUID }?.name ?? vdUUID
+            captureStatusLabel.stringValue = "● \(info.appName) → \(vdName)"
             captureStatusLabel.textColor = .labelColor
         }
     }
@@ -547,49 +532,41 @@ extension WindowRoutingWindowController: NSTableViewDelegate {
         guard row < windows.count else { return nil }
         let info  = windows[row]
         let colID = tableColumn?.identifier.rawValue ?? ""
-        let isCapturing = WindowCaptureManager.shared.isCapturing(info.id)
+        let capturing = WindowCaptureManager.shared.isCapturing(info.id)
 
         switch colID {
         case "icon":
             let v = (tableView.makeView(withIdentifier: .init("icon"), owner: nil)
                      as? NSImageView) ?? NSImageView()
-            v.identifier     = .init("icon")
-            v.image          = info.appIcon
-            v.imageScaling   = .scaleProportionallyUpOrDown
+            v.identifier = .init("icon")
+            v.image = info.appIcon
+            v.imageScaling = .scaleProportionallyUpOrDown
             return v
-
         case "app":
-            return textCell(tableView, id: "app",
-                            value: info.appName,
-                            color: isCapturing ? .systemGreen : .labelColor)
-
+            return textCell(tableView, id: "app", value: info.appName,
+                            color: capturing ? .systemGreen : .labelColor)
         case "window":
-            return textCell(tableView, id: "window",
-                            value: info.displayTitle,
+            return textCell(tableView, id: "window", value: info.displayTitle,
                             color: info.title.isEmpty ? .tertiaryLabelColor : .labelColor)
-
         case "display":
-            return textCell(tableView, id: "display",
-                            value: displayName(for: info.frame),
+            return textCell(tableView, id: "display", value: displayName(for: info.frame),
                             color: .secondaryLabelColor)
-
         default: return nil
         }
     }
 
     private func textCell(_ tv: NSTableView, id: String,
                           value: String, color: NSColor) -> NSTextField {
-        let cell: NSTextField
+        let c: NSTextField
         if let e = tv.makeView(withIdentifier: .init(id), owner: nil) as? NSTextField {
-            cell = e
+            c = e
         } else {
-            cell = NSTextField(labelWithString: "")
-            cell.identifier     = .init(id)
-            cell.font           = .systemFont(ofSize: 12)
-            cell.lineBreakMode  = .byTruncatingTail
+            c = NSTextField(labelWithString: "")
+            c.identifier = .init(id)
+            c.font = .systemFont(ofSize: 12)
+            c.lineBreakMode = .byTruncatingTail
         }
-        cell.stringValue = value
-        cell.textColor   = color
-        return cell
+        c.stringValue = value; c.textColor = color
+        return c
     }
 }
