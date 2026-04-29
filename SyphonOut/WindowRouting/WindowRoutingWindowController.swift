@@ -281,8 +281,22 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     private func wireInventory() {
         inventory.onUpdate = { [weak self] updated in
             guard let self else { return }
+
+            // Remember selected window by ID so a reorder/add/remove
+            // doesn't drop the user's selection.
+            let selectedID = self.selectedWindowInfo?.id
+
             self.windows = updated
             self.tableView.reloadData()
+
+            // Restore selection to the same window (new index after sort).
+            if let id = selectedID,
+               let newRow = updated.firstIndex(where: { $0.id == id }) {
+                self.tableView.selectRowIndexes(IndexSet(integer: newRow),
+                                                byExtendingSelection: false)
+                // Don't scroll — the user is looking at this row already.
+            }
+
             self.updateCountLabel()
             self.statusLabel.stringValue = "Updated \(shortTime())"
             self.updateActionBars()

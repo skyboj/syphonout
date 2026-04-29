@@ -137,7 +137,9 @@ enum MenuBuilder {
         sourceMenu.addItem(.separator())
 
         for server in servers {
-            let displayName = server.appName.isEmpty
+            // Show "AppName: StreamName" only when appName adds real info,
+            // e.g. multiple apps sharing similar stream names.
+            let displayName = server.appName.isEmpty || server.appName == server.name
                 ? server.name
                 : "\(server.appName): \(server.name)"
             let item = NSMenuItem(
@@ -151,9 +153,15 @@ enum MenuBuilder {
             sourceMenu.addItem(item)
         }
 
-        let selectedName = vd.sourceUUID.map { uuid in
-            servers.first { $0.uuid == uuid }?.name ?? uuid
-        } ?? "None"
+        let selectedName: String = {
+            guard let uuid = vd.sourceUUID else { return "None" }
+            if let server = servers.first(where: { $0.uuid == uuid }) {
+                return server.name
+            }
+            // Server offline — show a clean label instead of the raw UUID
+            if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
+            return "Syphon (offline)"
+        }()
         let sourceItem = NSMenuItem(title: "    Source: \(selectedName)", action: nil, keyEquivalent: "")
         sourceItem.submenu = sourceMenu
         menu.addItem(sourceItem)
