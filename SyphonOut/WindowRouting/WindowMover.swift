@@ -23,13 +23,15 @@ enum WindowMover {
 
     // MARK: - Public API
 
-    /// Moves `window` so its top-left corner is at the origin of `screen`,
-    /// preserving the window's current size.
+    /// Moves `window` to `screen`.
     ///
     /// - Parameters:
-    ///   - window:     Snapshot from WindowInventory describing the window to move.
-    ///   - screen:     Destination NSScreen.
-    ///   - resize:     If true, also resize the window to fill the entire screen.
+    ///   - window: Snapshot from WindowInventory.
+    ///   - screen: Destination NSScreen.
+    ///   - resize: If true, resize to fill the destination screen.
+    ///             If false (default), size is preserved — UNLESS the window
+    ///             was already filling its source screen (≥85% area coverage),
+    ///             in which case it is automatically scaled to fill the new screen.
     @discardableResult
     static func move(_ window: WindowInfo,
                      to screen: NSScreen,
@@ -39,7 +41,6 @@ enum WindowMover {
 
         let app = AXUIElementCreateApplication(window.pid)
 
-        // Get the list of AX windows for this process
         var rawWindows: CFTypeRef?
         let listErr = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
         guard listErr == .success, let windowList = rawWindows as? [AXUIElement] else {
@@ -50,35 +51,67 @@ enum WindowMover {
             return .windowNotFound
         }
 
-        // Compute target position in Quartz coordinates.
-        // NSScreen.frame origin is bottom-left; Quartz origin is top-left.
+        // Determine whether to resize:
+        // • explicit resize: always fill destination
+        // • auto: fill destination only if window is already filling its source screen
+        let shouldResize = resize || isFillingSourceScreen(window.frame)
+
+        // Target position: top-left of destination screen in Quartz coordinates.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let targetOriginQuartz = CGPoint(
+        let targetOrigin = CGPoint(
             x: screen.frame.minX,
-            y: primaryHeight - screen.frame.maxY   // flip Y
+            y: primaryHeight - screen.frame.maxY   // AppKit→Quartz Y flip
         )
 
-        // Set position
-        var point = targetOriginQuartz
+        // 1. Set position first (move before resize avoids brief off-screen flash)
+        var point = targetOrigin
         if let posValue = AXValueCreate(.cgPoint, &point) {
-            let posErr = AXUIElementSetAttributeValue(axWindow,
-                                                      kAXPositionAttribute as CFString,
-                                                      posValue)
-            if posErr != .success { return .axError(posErr) }
+            let err = AXUIElementSetAttributeValue(axWindow,
+                                                   kAXPositionAttribute as CFString,
+                                                   posValue)
+            if err != .success { return .axError(err) }
         }
 
-        // Optionally resize to fill the screen
-        if resize {
+        // 2. Resize if needed
+        if shouldResize {
             var size = screen.frame.size
             if let sizeValue = AXValueCreate(.cgSize, &size) {
-                let sizeErr = AXUIElementSetAttributeValue(axWindow,
-                                                           kAXSizeAttribute as CFString,
-                                                           sizeValue)
-                if sizeErr != .success { return .axError(sizeErr) }
+                let err = AXUIElementSetAttributeValue(axWindow,
+                                                       kAXSizeAttribute as CFString,
+                                                       sizeValue)
+                if err != .success { return .axError(err) }
             }
         }
 
         return .success
+    }
+
+    // MARK: - Source screen fill detection
+
+    /// Returns true if `frame` (Quartz coords) covers ≥85% of the screen it sits on.
+    /// Used to auto-scale windows that are effectively fullscreen on their source display.
+    private static func isFillingSourceScreen(_ frame: CGRect) -> Bool {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+
+        for screen in NSScreen.screens {
+            // Convert NSScreen frame to Quartz coordinates
+            let screenQuartz = CGRect(
+                x: screen.frame.minX,
+                y: primaryHeight - screen.frame.minY - screen.frame.height,
+                width:  screen.frame.width,
+                height: screen.frame.height
+            )
+            guard screenQuartz.intersects(frame) else { continue }
+
+            let screenArea = screenQuartz.width * screenQuartz.height
+            guard screenArea > 0 else { continue }
+
+            // Coverage = intersection area / screen area
+            let intersection = screenQuartz.intersection(frame)
+            let coverage = (intersection.width * intersection.height) / screenArea
+            if coverage >= 0.85 { return true }
+        }
+        return false
     }
 
     // MARK: - AXUIElement matching
