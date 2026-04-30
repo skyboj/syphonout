@@ -318,7 +318,12 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             self?.updateActionBars()
         }
 
-        captureObservers = [obs1, obs2]
+        // Rebuild VD popup whenever virtual displays are created or destroyed
+        let obs3 = NotificationCenter.default.addObserver(
+            forName: .vdListChanged, object: nil, queue: .main
+        ) { [weak self] _ in self?.rebuildVDPopup() }
+
+        captureObservers = [obs1, obs2, obs3]
     }
 
     // MARK: - NSWindowDelegate

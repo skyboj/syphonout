@@ -134,4 +134,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let syphonServersChanged  = Notification.Name("SyphonOutServersChanged")
     static let vdAssignmentChanged   = Notification.Name("SyphonOutVDAssignmentChanged")
+    static let vdListChanged         = Notification.Name("SyphonOutVDListChanged")
 }

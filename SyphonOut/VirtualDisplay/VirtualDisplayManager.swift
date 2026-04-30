@@ -127,6 +127,7 @@ final class VirtualDisplayManager: ObservableObject {
             }
         }
         save()
+        NotificationCenter.default.post(name: .vdListChanged, object: nil)
         return vd
     }
 
@@ -139,6 +140,7 @@ final class VirtualDisplayManager: ObservableObject {
         id.withCString { syphonout_vd_destroy($0) }
         displays.remove(at: index)
         save()
+        NotificationCenter.default.post(name: .vdListChanged, object: nil)
     }
 
     private func createDefaultDisplay() {
