@@ -40,6 +40,15 @@ final class WindowInventory {
         "com.apple.notificationcenterui",
         "com.apple.systemuiserver",
         "com.apple.screencaptureui",
+        "com.apple.Spotlight",
+        "com.apple.spotlight",
+    ]
+
+    // App display names that are always system helpers, never content windows.
+    private static let filteredAppNames: Set<String> = [
+        "Spotlight",
+        "Open and Save Panel Server",
+        "LinkedNotesUIService",
     ]
 
     // MARK: - Lifecycle
@@ -84,11 +93,20 @@ final class WindowInventory {
             let bundle  = app.bundleIdentifier ?? ""
             let appName = app.applicationName
 
+            // Skip our own output windows
+            if bundle == (Bundle.main.bundleIdentifier ?? "com.syphonout.SyphonOut") { continue }
+
             // Skip known system-only bundles
             if Self.filteredBundles.contains(bundle) { continue }
 
             // Skip windows with no meaningful owner (Menubar, tracking overlays…)
             if appName.isEmpty { continue }
+
+            // Skip AutoFill credential overlay windows (named "AutoFill (AppName)")
+            if appName.hasPrefix("AutoFill") { continue }
+
+            // Skip known system helper process names
+            if Self.filteredAppNames.contains(appName) { continue }
 
             // Skip tiny windows — too small to be useful for routing (< 100×100 pts)
             if w.frame.width < 100 || w.frame.height < 100 { continue }
