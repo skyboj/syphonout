@@ -179,7 +179,10 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         let item = NSTabViewItem()
         item.label = "Move"
 
-        let v = box()
+        // NSTabView sets the item view's frame directly — must NOT disable
+        // autoresizingMask translation on this view or clicks won't reach subviews.
+        let v = NSView()
+        v.autoresizingMask = [.width, .height]
         item.view = v
 
         let toLabel = label("Move to:", size: 12, bold: false)
@@ -227,7 +230,9 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         let item = NSTabViewItem()
         item.label = "Capture"
 
-        let v = box()
+        // Same as Move tab — NSTabView manages this frame; autoresizingMask must be on.
+        let v = NSView()
+        v.autoresizingMask = [.width, .height]
         item.view = v
 
         let captureToLabel = label("Capture to:", size: 12, bold: false)
