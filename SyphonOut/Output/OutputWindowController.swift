@@ -66,8 +66,12 @@ final class OutputWindowController {
         win.ignoresMouseEvents = true
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
 
-        // CAMetalLayer as the window's content view
+        // CAMetalLayer as the window's content view.
+        // device MUST be set explicitly before syphonout_output_create — otherwise
+        // [CAMetalLayer nextDrawable] returns nil until macOS lazily assigns a GPU,
+        // and the Rust renderer gets null drawables → black output every frame.
         let layer = CAMetalLayer()
+        layer.device = MTLCreateSystemDefaultDevice()
         layer.pixelFormat = .bgra8Unorm
         layer.framebufferOnly = true
         layer.contentsScale = screen?.backingScaleFactor ?? 1.0

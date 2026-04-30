@@ -45,9 +45,12 @@ final class WindowCapture: NSObject {
     // MARK: - Start
 
     func start(completion: @escaping (Error?) -> Void) {
-        // Look up the live SCWindow by ID
+        // Look up the live SCWindow by ID.
+        // onScreenWindowsOnly: false — must include windows on ALL Spaces/displays
+        // so we can capture presentation windows that are on external displays or
+        // full-screen Spaces even when the capturing device is on a different Space.
         SCShareableContent.getExcludingDesktopWindows(
-            true, onScreenWindowsOnly: true
+            true, onScreenWindowsOnly: false
         ) { [weak self] content, error in
             guard let self else { return }
             if let error {
