@@ -16,18 +16,14 @@ struct WindowInfo: Identifiable {
     }
 }
 
-/// Periodically enumerates on-screen windows via SCShareableContent.
+/// Periodically enumerates windows via SCShareableContent.
 /// Refresh interval: 2 seconds. Calls `onUpdate` on the main thread whenever
 /// the list changes (added, removed, or renamed windows).
-///
 final class WindowInventory {
 
     // MARK: - Public state
 
-    /// Current snapshot; always accessed/mutated on main thread.
     private(set) var windows: [WindowInfo] = []
-
-    /// Called on main thread after each refresh that produced a different list.
     var onUpdate: (([WindowInfo]) -> Void)?
 
     // MARK: - Private
@@ -36,11 +32,20 @@ final class WindowInventory {
     private let queue = DispatchQueue(label: "com.syphonout.WindowInventory", qos: .utility)
     private var iconCache: [pid_t: NSImage] = [:]
 
+    // Bundles that produce only system-internal windows, not useful to route.
+    private static let filteredBundles: Set<String> = [
+        "com.apple.dock",
+        "com.apple.WindowManager",
+        "com.apple.controlcenter",
+        "com.apple.notificationcenterui",
+        "com.apple.systemuiserver",
+        "com.apple.screencaptureui",
+    ]
+
     // MARK: - Lifecycle
 
     func start() {
         guard refreshTimer == nil else { return }
-
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .seconds(2), leeway: .milliseconds(100))
         timer.setEventHandler { [weak self] in self?.refresh() }
@@ -56,13 +61,13 @@ final class WindowInventory {
     // MARK: - Fetch
 
     private func refresh() {
-        // SCShareableContent.getExcludingDesktopWindows is the modern API
-        // that doesn't need a running capture session.
-        SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { [weak self] content, error in
+        // onScreenWindowsOnly: false — include windows on ALL Spaces and displays,
+        // not just the currently active Space. This ensures presentation windows,
+        // confidence monitors, and windows on external displays always appear.
+        SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: false) { [weak self] content, error in
             guard let self, let content else { return }
             let snapshot = self.buildSnapshot(from: content.windows)
             DispatchQueue.main.async {
-                // Only fire onUpdate when something actually changed.
                 if !self.listsEqual(self.windows, snapshot) {
                     self.windows = snapshot
                     self.onUpdate?(snapshot)
@@ -75,27 +80,32 @@ final class WindowInventory {
         var result: [WindowInfo] = []
         for w in scWindows {
             guard let app = w.owningApplication else { continue }
-            // Skip system UI server, Dock, WindowServer noise
-            let bundle = app.bundleIdentifier ?? ""
-            if bundle == "com.apple.dock" { continue }
-            if bundle == "com.apple.WindowManager" { continue }
 
-            let pid = app.processID
-            let icon = cachedIcon(pid: pid, app: app)
-            let title = w.title ?? ""
+            let bundle  = app.bundleIdentifier ?? ""
             let appName = app.applicationName
 
-            let info = WindowInfo(
-                id: CGWindowID(w.windowID),
-                title: title,
+            // Skip known system-only bundles
+            if Self.filteredBundles.contains(bundle) { continue }
+
+            // Skip windows with no meaningful owner (Menubar, tracking overlays…)
+            if appName.isEmpty { continue }
+
+            // Skip tiny windows — too small to be useful for routing (< 100×100 pts)
+            if w.frame.width < 100 || w.frame.height < 100 { continue }
+
+            let pid   = app.processID
+            let icon  = cachedIcon(pid: pid, app: app)
+            let title = w.title ?? ""
+
+            result.append(WindowInfo(
+                id:      CGWindowID(w.windowID),
+                title:   title,
                 appName: appName,
                 appIcon: icon,
-                pid: pid,
-                frame: w.frame
-            )
-            result.append(info)
+                pid:     pid,
+                frame:   w.frame
+            ))
         }
-        // Sort: by app name, then window title
         return result.sorted {
             if $0.appName != $1.appName { return $0.appName < $1.appName }
             return $0.displayTitle < $1.displayTitle
@@ -107,9 +117,7 @@ final class WindowInventory {
     private func cachedIcon(pid: pid_t, app: SCRunningApplication) -> NSImage? {
         if let cached = iconCache[pid] { return cached }
         let running = NSRunningApplication(processIdentifier: pid)
-        let icon = running?.icon
-        if let icon {
-            // Scale down to 16×16 for table display
+        if let icon = running?.icon {
             let small = NSImage(size: NSSize(width: 16, height: 16))
             small.lockFocus()
             icon.draw(in: NSRect(x: 0, y: 0, width: 16, height: 16),
