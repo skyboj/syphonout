@@ -35,13 +35,24 @@ final class OutputWindowController {
     // MARK: - Window
 
     private func setupWindow() {
-        let screenRect = CGDisplayBounds(displayId)
-        let nsRect = NSRect(
-            x: screenRect.origin.x,
-            y: screenRect.origin.y,
-            width: screenRect.size.width,
-            height: screenRect.size.height
-        )
+        // NSWindow(contentRect:) expects AppKit screen coordinates:
+        //   origin = bottom-left of the primary display, y increasing upward.
+        // CGDisplayBounds returns Quartz coordinates (y increasing downward) —
+        // using it directly causes the window to be mis-positioned on any display
+        // whose top edge doesn't align with the primary's top edge.
+        // NSScreen.frame is already in AppKit coordinates, so use it directly.
+        let screen = NSScreen.screens.first {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == displayId
+        }
+        let nsRect = screen?.frame ?? {
+            // Fallback (display not yet in NSScreen.screens): convert Quartz → AppKit.
+            let q = CGDisplayBounds(displayId)
+            let primaryH = NSScreen.screens.first?.frame.height ?? CGDisplayBounds(CGMainDisplayID()).height
+            return NSRect(x: q.origin.x,
+                          y: primaryH - q.origin.y - q.size.height,
+                          width: q.size.width,
+                          height: q.size.height)
+        }()
 
         let win = NSWindow(
             contentRect: nsRect,
@@ -59,13 +70,11 @@ final class OutputWindowController {
         let layer = CAMetalLayer()
         layer.pixelFormat = .bgra8Unorm
         layer.framebufferOnly = true
-        layer.contentsScale = NSScreen.screens
-            .first(where: { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == displayId })?
-            .backingScaleFactor ?? 1.0
+        layer.contentsScale = screen?.backingScaleFactor ?? 1.0
         layer.drawableSize = CGSize(width: nsRect.width * layer.contentsScale,
                                     height: nsRect.height * layer.contentsScale)
 
-        let contentView = NSView(frame: nsRect)
+        let contentView = NSView(frame: NSRect(origin: .zero, size: nsRect.size))
         contentView.wantsLayer = true
         contentView.layer = layer
         win.contentView = contentView
