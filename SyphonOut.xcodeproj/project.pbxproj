@@ -198,6 +198,7 @@
 				4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */,
 				6AD4CE1683EB5ECA73F9C6FF /* Sources */,
 				76DA70469248C0146C755D88 /* Resources */,
+				AA11BB22CC33DD44EE55FF66 /* Copy to Applications */,
 			);
 			buildRules = (
 			);
@@ -255,6 +256,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		AA11BB22CC33DD44EE55FF66 /* Copy to Applications */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy to Applications";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cp -R \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\" \"/Applications/${PRODUCT_NAME}.app\"\n";
+		};
 		4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

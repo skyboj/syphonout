@@ -146,7 +146,7 @@ final class VirtualDisplayManager: ObservableObject {
     private func createDefaultDisplay() {
         // Create the default VD but do NOT assign it to any physical output.
         // The user selects which physical display gets the signal via the menu.
-        createDisplay(name: "Main")
+        createDisplay(name: "Channel 1")
     }
 
     func setSource(vdId: String, sourceUUID: String) {
