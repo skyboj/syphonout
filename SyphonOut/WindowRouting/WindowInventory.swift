@@ -57,7 +57,7 @@ final class WindowInventory {
         guard refreshTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .seconds(2), leeway: .milliseconds(100))
-        timer.setEventHandler { [weak self] in self?.refresh() }
+        timer.setEventHandler { [weak self] in self?.refresh(force: false) }
         timer.resume()
         refreshTimer = timer
     }
@@ -67,9 +67,16 @@ final class WindowInventory {
         refreshTimer = nil
     }
 
+    /// Immediately fetch a fresh snapshot and always call onUpdate regardless of
+    /// whether the list appears equal. Use this after a move so the new positions
+    /// are committed to `windows` before the next Move action.
+    func forceRefresh() {
+        queue.async { [weak self] in self?.refresh(force: true) }
+    }
+
     // MARK: - Fetch
 
-    private func refresh() {
+    private func refresh(force: Bool) {
         // onScreenWindowsOnly: false — include windows on ALL Spaces and displays,
         // not just the currently active Space. This ensures presentation windows,
         // confidence monitors, and windows on external displays always appear.
@@ -77,7 +84,11 @@ final class WindowInventory {
             guard let self, let content else { return }
             let snapshot = self.buildSnapshot(from: content.windows)
             DispatchQueue.main.async {
-                if !self.listsEqual(self.windows, snapshot) {
+                // Always update when forced, or when the list actually changed.
+                // IMPORTANT: listsEqual checks frame too — so a window that was
+                // moved to another screen is detected as changed even if its title
+                // and ID are identical.
+                if force || !self.listsEqual(self.windows, snapshot) {
                     self.windows = snapshot
                     self.onUpdate?(snapshot)
                 }
@@ -151,6 +162,10 @@ final class WindowInventory {
 
     private func listsEqual(_ a: [WindowInfo], _ b: [WindowInfo]) -> Bool {
         guard a.count == b.count else { return false }
-        return zip(a, b).allSatisfy { $0.id == $1.id && $0.title == $1.title }
+        return zip(a, b).allSatisfy {
+            $0.id == $1.id &&
+            $0.title == $1.title &&
+            $0.frame == $1.frame   // detect window moves/resizes
+        }
     }
 }

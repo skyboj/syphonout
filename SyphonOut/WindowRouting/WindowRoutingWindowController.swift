@@ -385,8 +385,7 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
 
     @objc private func manualRefresh() {
         statusLabel.stringValue = "Refreshing…"
-        inventory.stop()
-        inventory.start()
+        inventory.forceRefresh()
         rebuildVDPopup()
     }
 
@@ -400,14 +399,16 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             let verb = resize ? "filled on" : "moved to"
             moveStatusLabel.stringValue = "✓ \(info.appName) \(verb) \(screen.localizedName)"
             moveStatusLabel.textColor = .labelColor
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.inventory.stop(); self?.inventory.start()
+            // Force-refresh immediately so windows[] is updated with the new frame.
+            // This lets the user move the same window again without re-selecting it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.inventory.forceRefresh()
             }
         case .noAccessibility:
-            moveStatusLabel.stringValue = "✗ Accessibility permission required — enable in System Settings → Privacy"
+            moveStatusLabel.stringValue = "✗ Accessibility permission required — open Preferences → Permissions"
             moveStatusLabel.textColor = .systemRed
         case .windowNotFound:
-            moveStatusLabel.stringValue = "✗ Window no longer on screen"
+            moveStatusLabel.stringValue = "✗ Window not found — try Refresh"
             moveStatusLabel.textColor = .systemOrange
         case .axError(let e):
             moveStatusLabel.stringValue = "✗ AX error \(e.rawValue)"
@@ -426,9 +427,13 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         guard let info = selectedWindowInfo,
               let screen = selectedScreen,
               let vd = selectedVD else { return }
-        // Move first (may fail silently if AX not granted), then capture anyway
+        // Move first, then capture. Capture uses windowID so stale frame is fine.
         _ = WindowMover.move(info, to: screen, resize: false)
         beginCapture(info: info, vdUUID: vd.id)
+        // Refresh list so the Display column updates to the new screen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.inventory.forceRefresh()
+        }
     }
 
     private func beginCapture(info: WindowInfo, vdUUID: String) {
