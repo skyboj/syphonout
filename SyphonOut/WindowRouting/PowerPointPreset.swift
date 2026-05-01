@@ -122,17 +122,11 @@ final class PowerPointPreset {
     }
 
     private func isPresenterView(_ w: WindowInfo) -> Bool {
-        w.title.localizedCaseInsensitiveContains("Presenter")
+        w.title.localizedCaseInsensitiveContains("Presenter View")
     }
 
     private func isSlideShow(_ w: WindowInfo) -> Bool {
-        // Slide Show window: belongs to PowerPoint, is NOT the Presenter View,
-        // and is NOT the main editing window.
-        // Editing windows carry " - " in their title (e.g. "deck.pptx - PowerPoint").
-        // Slide show windows are typically untitled or have a very short title.
-        guard !isPresenterView(w) else { return false }
-        guard !w.title.contains(" - ") else { return false }
-        return true
+        w.title.localizedCaseInsensitiveContains("Slide Show")
     }
 }
 
