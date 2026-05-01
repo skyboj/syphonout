@@ -83,14 +83,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handleScreenChange()
         }
 
-        // 9. Global hotkeys — ⌃⌥⌘K blank all, ⌃⌥⌘S restore all
+        // 9. Global hotkeys (Carbon RegisterEventHotKey — no Accessibility permission needed)
+        let hkLog = Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkey")
+        HotkeyManager.shared.onFreezeAll = {
+            VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_FREEZE)
+            hkLog.info("freeze all (⌃⌥F)")
+        }
+        HotkeyManager.shared.onUnfreezeAll = {
+            VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_SIGNAL)
+            hkLog.info("unfreeze all (⌃⌥U)")
+        }
         HotkeyManager.shared.onBlankAll = {
             VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_BLANK_BLACK)
-            Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkey").info("blank all (⌃⌥⌘K)")
+            hkLog.info("blank all (⌃⌥⌘K)")
         }
         HotkeyManager.shared.onRestoreAll = {
             VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_SIGNAL)
-            Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkey").info("restore all (⌃⌥⌘S)")
+            hkLog.info("restore all (⌃⌥⌘S)")
         }
         HotkeyManager.shared.start()
 

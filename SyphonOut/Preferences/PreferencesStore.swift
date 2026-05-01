@@ -70,14 +70,65 @@ final class PreferencesStore {
     struct KeyCombo {
         let keyCode: UInt16
         let flags: NSEvent.ModifierFlags
+
+        /// Human-readable string, e.g. "⌃⌥⌘K"
+        var displayString: String {
+            var s = ""
+            if flags.contains(.control) { s += "⌃" }
+            if flags.contains(.option)  { s += "⌥" }
+            if flags.contains(.shift)   { s += "⇧" }
+            if flags.contains(.command) { s += "⌘" }
+            s += keyName
+            return s
+        }
+
+        private var keyName: String {
+            // Common key codes (US ANSI hardware layout)
+            switch keyCode {
+            case 0:  return "A"
+            case 1:  return "S"
+            case 2:  return "D"
+            case 3:  return "F"
+            case 4:  return "H"
+            case 5:  return "G"
+            case 6:  return "Z"
+            case 7:  return "X"
+            case 8:  return "C"
+            case 9:  return "V"
+            case 11: return "B"
+            case 12: return "Q"
+            case 13: return "W"
+            case 14: return "E"
+            case 15: return "R"
+            case 16: return "Y"
+            case 17: return "T"
+            case 31: return "O"
+            case 32: return "U"
+            case 34: return "I"
+            case 35: return "P"
+            case 37: return "L"
+            case 38: return "J"
+            case 40: return "K"
+            case 41: return ";"
+            case 45: return "N"
+            case 46: return "M"
+            case 49: return "Space"
+            default: return "(\(keyCode))"
+            }
+        }
     }
 
-    // Defaults: ⌃⌥F, ⌃⌥U, ⌃⌥B, ⌃⌥S
-    // Key codes: F=3, U=32, B=11, S=1
+    // Key codes (hardware, layout-independent):
+    //   F=3, U=32, K=40, S=1
+    // Defaults:
+    //   Freeze   ⌃⌥F  — freeze all displays
+    //   Unfreeze ⌃⌥U  — unfreeze (back to signal)
+    //   Blank    ⌃⌥⌘K — emergency blank (shown in Preferences)
+    //   Restore  ⌃⌥⌘S — restore signal (shown in Preferences)
     var shortcutFreezeAll:   KeyCombo { loadCombo(key: "shortcutFreezeAll",   defaultKey: 3,  flags: [.control, .option]) }
     var shortcutUnfreezeAll: KeyCombo { loadCombo(key: "shortcutUnfreezeAll", defaultKey: 32, flags: [.control, .option]) }
-    var shortcutBlankAll:    KeyCombo { loadCombo(key: "shortcutBlankAll",    defaultKey: 11, flags: [.control, .option]) }
-    var shortcutRestoreAll:  KeyCombo { loadCombo(key: "shortcutRestoreAll",  defaultKey: 1,  flags: [.control, .option]) }
+    var shortcutBlankAll:    KeyCombo { loadCombo(key: "shortcutBlankAll",    defaultKey: 40, flags: [.control, .option, .command]) }
+    var shortcutRestoreAll:  KeyCombo { loadCombo(key: "shortcutRestoreAll",  defaultKey: 1,  flags: [.control, .option, .command]) }
 
     private func loadCombo(key: String, defaultKey: UInt16, flags: NSEvent.ModifierFlags) -> KeyCombo {
         guard let dict = defaults.dictionary(forKey: key),

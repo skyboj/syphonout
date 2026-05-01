@@ -7,7 +7,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
     var outputs: [OutputWindowController]
-    private var globalShortcutMonitor: Any?
     private var serversChangedObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "StatusBar")
 
@@ -28,8 +27,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
 
-        registerGlobalShortcuts()
-
         // Rebuild menu icon when server list changes
         serversChangedObserver = NotificationCenter.default.addObserver(
             forName: .syphonServersChanged,
@@ -43,7 +40,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     deinit {
-        if let m = globalShortcutMonitor { NSEvent.removeMonitor(m) }
         if let obs = serversChangedObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
@@ -95,26 +91,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         MenuBuilder.build(menu: menu, outputs: outputs, delegate: self)
         updateIcon()
-    }
-
-    // MARK: - Global shortcuts
-
-    private func registerGlobalShortcuts() {
-        let prefs = PreferencesStore.shared
-        globalShortcutMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return }
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-            if flags == prefs.shortcutFreezeAll.flags, event.keyCode == prefs.shortcutFreezeAll.keyCode {
-                self.freezeAll()
-            } else if flags == prefs.shortcutUnfreezeAll.flags, event.keyCode == prefs.shortcutUnfreezeAll.keyCode {
-                self.unfreezeAll()
-            } else if flags == prefs.shortcutBlankAll.flags, event.keyCode == prefs.shortcutBlankAll.keyCode {
-                self.blankAll()
-            } else if flags == prefs.shortcutRestoreAll.flags, event.keyCode == prefs.shortcutRestoreAll.keyCode {
-                self.restoreAll()
-            }
-        }
     }
 
     // MARK: - Batch operations (operate on Virtual Displays, not physical outputs)

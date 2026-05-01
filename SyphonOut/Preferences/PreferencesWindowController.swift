@@ -79,17 +79,20 @@ final class PreferencesWindowController: NSWindowController {
         // ── Global Hotkeys ───────────────────────────────────────────────────
         addSectionHeader("Global Hotkeys", to: stack)
 
-        let hotkeys: [(String, String)] = [
-            ("Blank all displays (emergency stop)",  "⌃⌥⌘K"),
-            ("Restore all displays to signal",       "⌃⌥⌘S"),
+        // Build hotkey rows dynamically from PreferencesStore so they stay in sync.
+        let hotkeys: [(String, PreferencesStore.KeyCombo)] = [
+            ("Freeze all displays",          prefs.shortcutFreezeAll),
+            ("Unfreeze all (back to signal)", prefs.shortcutUnfreezeAll),
+            ("Blank all (emergency stop)",   prefs.shortcutBlankAll),
+            ("Restore all to signal",        prefs.shortcutRestoreAll),
         ]
-        for (label, key) in hotkeys {
+        for (label, combo) in hotkeys {
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = 8
             let lbl = NSTextField(labelWithString: label)
             lbl.textColor = .labelColor
-            let kbd = NSTextField(labelWithString: key)
+            let kbd = NSTextField(labelWithString: combo.displayString)
             kbd.textColor = .secondaryLabelColor
             kbd.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             row.addArrangedSubview(lbl)
@@ -99,7 +102,7 @@ final class PreferencesWindowController: NSWindowController {
         }
 
         let hotkeyNote = NSTextField(wrappingLabelWithString:
-            "Hotkeys require Accessibility permission. Grant it below, then relaunch.")
+            "Hotkeys work system-wide without any extra permissions.")
         hotkeyNote.textColor = .secondaryLabelColor
         hotkeyNote.font = NSFont.systemFont(ofSize: 11)
         stack.addArrangedSubview(hotkeyNote)
@@ -110,7 +113,7 @@ final class PreferencesWindowController: NSWindowController {
         addSectionHeader("Permissions", to: stack)
 
         stack.addArrangedSubview(permRow(
-            label: "Accessibility (global hotkeys)",
+            label: "Accessibility (Window Routing — move windows)",
             dot: accessibilityDot,
             buttonTitle: "Grant…",
             action: #selector(grantAccessibility(_:))
