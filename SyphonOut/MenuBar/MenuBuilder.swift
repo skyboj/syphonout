@@ -17,6 +17,14 @@ enum MenuBuilder {
         )
         routingItem.target = delegate
         menu.addItem(routingItem)
+
+        let stopAllItem = NSMenuItem(
+            title: "Stop All Outputs",
+            action: #selector(StatusBarController.stopAllOutputs(_:)),
+            keyEquivalent: ""
+        )
+        stopAllItem.target = delegate
+        menu.addItem(stopAllItem)
         menu.addItem(.separator())
 
         // ── Virtual Displays ───────────────────────────────────────────────

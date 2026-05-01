@@ -236,6 +236,10 @@ extension StatusBarController {
         }
     }
 
+    @objc func stopAllOutputs(_ sender: NSMenuItem) {
+        VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_BLANK_BLACK)
+    }
+
     @objc func toggleMirror(_ sender: NSMenuItem) {
         // Mirror: route all displays from the first output's server
         // Simple toggle: use the first output as primary source
