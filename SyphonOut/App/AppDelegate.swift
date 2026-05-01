@@ -37,9 +37,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 4b. Initialise Virtual Display manager.
-        //     Shows output windows only for displays that already have a saved assignment.
+        //     Shows output windows only for external displays that already have a saved assignment.
+        //     The built-in MacBook display is NEVER auto-shown on launch — the user must
+        //     explicitly assign it after startup. This ensures the Mac is always accessible.
         _ = VirtualDisplayManager.shared
         for (displayId, _) in VirtualDisplayManager.shared.assignments {
+            guard CGDisplayIsBuiltin(displayId) == 0 else {
+                logger.info("Skipping auto-show for built-in display \(displayId) on launch")
+                continue
+            }
             outputs.first(where: { $0.displayId == displayId })?.showOutput()
         }
 

@@ -60,15 +60,21 @@ final class OutputWindowController {
             backing: .buffered,
             defer: false
         )
-        // External displays: level 2000 (NSScreenSaverWindowLevel) — above Mission Control (~1500).
-        // Built-in MacBook display: level 1000 — above normal apps but below Mission Control,
-        // so the machine stays navigable while still covering the desktop.
+        // External displays: level 2000 (NSScreenSaverWindowLevel) — above Mission Control.
+        // Built-in MacBook display: level 3 (NSFloatingWindowLevel) — above normal apps,
+        // but below Mission Control so the Mac stays fully navigable.
+        // Also skip .stationary/.ignoresCycle so Mission Control can see and manage the window.
         let isBuiltin = CGDisplayIsBuiltin(displayId) != 0
-        win.level = NSWindow.Level(rawValue: isBuiltin ? 1000 : 2000)
+        if isBuiltin {
+            win.level = NSWindow.Level(rawValue: 3)   // floating — below Mission Control
+            win.collectionBehavior = [.canJoinAllSpaces]
+        } else {
+            win.level = NSWindow.Level(rawValue: 2000) // screen saver — above Mission Control
+            win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        }
         win.backgroundColor = .black
         win.isOpaque = true
         win.ignoresMouseEvents = true
-        win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
 
         // CAMetalLayer as the window's content view.
         // device MUST be set explicitly before syphonout_output_create — otherwise
