@@ -25,6 +25,17 @@ enum MenuBuilder {
         )
         stopAllItem.target = delegate
         menu.addItem(stopAllItem)
+
+        // ── Presets ────────────────────────────────────────────────────────
+        let pptItem = NSMenuItem(
+            title: "PowerPoint Preset",
+            action: #selector(StatusBarController.togglePowerPointPreset(_:)),
+            keyEquivalent: ""
+        )
+        pptItem.target = delegate
+        pptItem.state  = PowerPointPreset.shared.isActive ? .on : .off
+        menu.addItem(pptItem)
+
         menu.addItem(.separator())
 
         // ── Virtual Displays ───────────────────────────────────────────────

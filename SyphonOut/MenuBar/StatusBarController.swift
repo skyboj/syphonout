@@ -240,6 +240,10 @@ extension StatusBarController {
         VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_BLANK_BLACK)
     }
 
+    @objc func togglePowerPointPreset(_ sender: NSMenuItem) {
+        PowerPointPreset.shared.toggle()
+    }
+
     @objc func toggleMirror(_ sender: NSMenuItem) {
         // Mirror: route all displays from the first output's server
         // Simple toggle: use the first output as primary source
