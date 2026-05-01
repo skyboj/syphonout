@@ -35,7 +35,8 @@ enum WindowMover {
     @discardableResult
     static func move(_ window: WindowInfo,
                      to screen: NSScreen,
-                     resize: Bool = false) -> MoveResult {
+                     resize: Bool = false,
+                     fullscreen: Bool = false) -> MoveResult {
 
         guard AXIsProcessTrusted() else { return .noAccessibility }
 
@@ -49,6 +50,23 @@ enum WindowMover {
 
         guard let axWindow = findAXWindow(in: windowList, matching: window) else {
             return .windowNotFound
+        }
+
+        if fullscreen {
+            // For fullscreen: move to the target screen first, then enter native
+            // fullscreen mode. We skip manual resize — the OS handles that.
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+            var point = CGPoint(x: screen.frame.minX,
+                                y: primaryHeight - screen.frame.maxY)
+            if let posVal = AXValueCreate(.cgPoint, &point) {
+                AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, posVal)
+            }
+            // Give the window manager a moment to register the new screen before
+            // requesting fullscreen — otherwise macOS may fullscreen it on the wrong Space.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                enterFullscreen(axWindow)
+            }
+            return .success
         }
 
         // Determine whether to resize:
@@ -84,6 +102,28 @@ enum WindowMover {
         }
 
         return .success
+    }
+
+    // MARK: - Fullscreen
+
+    /// Enter native macOS fullscreen for an already-located AXUIElement window.
+    /// Tries AXFullScreen attribute first (most reliable); falls back to pressing
+    /// the green zoom button, which in modern macOS triggers fullscreen.
+    private static func enterFullscreen(_ axWindow: AXUIElement) {
+        // Attempt 1: set AXFullScreen attribute directly
+        let err = AXUIElementSetAttributeValue(axWindow,
+                                               "AXFullScreen" as CFString,
+                                               kCFBooleanTrue)
+        if err == .success { return }
+
+        // Attempt 2: press the zoom (green) button — in macOS 10.15+ this enters fullscreen
+        var rawBtn: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axWindow,
+                                         kAXZoomButtonAttribute as CFString,
+                                         &rawBtn) == .success,
+           let btn = rawBtn {
+            AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString)
+        }
     }
 
     // MARK: - Source screen fill detection

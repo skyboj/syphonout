@@ -21,10 +21,11 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     private var tabView:       NSTabView!
 
     // Move tab
-    private var screenPopup:    NSPopUpButton!
-    private var moveButton:     NSButton!
-    private var moveFillButton: NSButton!
-    private var moveStatusLabel: NSTextField!
+    private var screenPopup:        NSPopUpButton!
+    private var moveButton:         NSButton!
+    private var moveFillButton:     NSButton!
+    private var moveFullscreenButton: NSButton!
+    private var moveStatusLabel:    NSTextField!
 
     // Capture tab
     private var vdPopup:            NSPopUpButton!
@@ -198,10 +199,16 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         moveFillButton.bezelStyle = .rounded
         moveFillButton.isEnabled  = false
 
+        moveFullscreenButton = NSButton(title: "Move & Fullscreen",
+                                        target: self, action: #selector(moveAndFullscreen))
+        moveFullscreenButton.bezelStyle = .rounded
+        moveFullscreenButton.isEnabled  = false
+
         moveStatusLabel = label("", size: 11, bold: false)
         moveStatusLabel.textColor = .secondaryLabelColor
 
-        [toLabel, screenPopup, moveButton, moveFillButton, moveStatusLabel].forEach {
+        [toLabel, screenPopup, moveButton, moveFillButton,
+         moveFullscreenButton, moveStatusLabel].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             v.addSubview($0)
         }
@@ -211,12 +218,14 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
             toLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             screenPopup.leadingAnchor.constraint(equalTo: toLabel.trailingAnchor, constant: 8),
             screenPopup.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-            screenPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            moveButton.leadingAnchor.constraint(equalTo: screenPopup.trailingAnchor, constant: 10),
+            screenPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 140),
+            moveButton.leadingAnchor.constraint(equalTo: screenPopup.trailingAnchor, constant: 8),
             moveButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             moveFillButton.leadingAnchor.constraint(equalTo: moveButton.trailingAnchor, constant: 6),
             moveFillButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
-            moveStatusLabel.leadingAnchor.constraint(equalTo: moveFillButton.trailingAnchor, constant: 12),
+            moveFullscreenButton.leadingAnchor.constraint(equalTo: moveFillButton.trailingAnchor, constant: 6),
+            moveFullscreenButton.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            moveStatusLabel.leadingAnchor.constraint(equalTo: moveFullscreenButton.trailingAnchor, constant: 10),
             moveStatusLabel.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             moveStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: v.trailingAnchor, constant: -12),
         ])
@@ -389,14 +398,15 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         rebuildVDPopup()
     }
 
-    @objc private func moveWindow()        { performMove(resize: false) }
-    @objc private func moveAndFillWindow() { performMove(resize: true) }
+    @objc private func moveWindow()        { performMove(resize: false, fullscreen: false) }
+    @objc private func moveAndFillWindow() { performMove(resize: true,  fullscreen: false) }
+    @objc private func moveAndFullscreen() { performMove(resize: false, fullscreen: true) }
 
-    private func performMove(resize: Bool) {
+    private func performMove(resize: Bool, fullscreen: Bool = false) {
         guard let info = selectedWindowInfo, let screen = selectedScreen else { return }
-        switch WindowMover.move(info, to: screen, resize: resize) {
+        switch WindowMover.move(info, to: screen, resize: resize, fullscreen: fullscreen) {
         case .success:
-            let verb = resize ? "filled on" : "moved to"
+            let verb = fullscreen ? "sent fullscreen to" : (resize ? "filled on" : "moved to")
             moveStatusLabel.stringValue = "✓ \(info.appName) \(verb) \(screen.localizedName)"
             moveStatusLabel.textColor = .labelColor
             // Force-refresh immediately so windows[] is updated with the new frame.
@@ -477,8 +487,9 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         let capturing = info.map { WindowCaptureManager.shared.isCapturing($0.id) } ?? false
         let hasVDs = !VirtualDisplayManager.shared.displays.isEmpty
 
-        moveButton.isEnabled     = sel
-        moveFillButton.isEnabled = sel
+        moveButton.isEnabled           = sel
+        moveFillButton.isEnabled       = sel
+        moveFullscreenButton.isEnabled = sel
         captureButton.isEnabled     = sel && hasVDs && !capturing
         moveCaptureButton.isEnabled = sel && hasVDs && !capturing
         stopButton.isEnabled        = sel && capturing
