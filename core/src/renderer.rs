@@ -18,7 +18,7 @@ use std::ffi::c_void;
 use objc2::msg_send;
 use objc2::runtime::AnyObject;
 
-use crate::state::SyphonOutMode;
+use crate::state::{SyphonOutMode, SyphonOutScaleMode};
 
 struct Pipelines {
     passthrough: RenderPipelineState,
@@ -46,6 +46,17 @@ pub struct MetalRenderer {
 
     blank_color:       Option<[f32; 4]>,
     show_test_pattern: bool,
+
+    // Fit-mode UV rect (passed to fragment shader as FitUniforms).
+    // fill mode  → min=(0,0) max=(1,1)  → identity, no change
+    // fit  mode  → computed from source/drawable aspect ratios
+    scale_mode:     SyphonOutScaleMode,
+    fit_rect_min:   [f32; 2],
+    fit_rect_max:   [f32; 2],
+    tex_w:          u64,
+    tex_h:          u64,
+    drawable_w:     u64,
+    drawable_h:     u64,
 }
 
 // SAFETY: CAMetalLayer * lives as long as the Swift NSWindow; Metal is thread-safe.
@@ -82,9 +93,50 @@ impl MetalRenderer {
             crossfade_step: 1.0 / 6.0,   // 100ms @ 60fps
             blank_color: None,
             show_test_pattern: false,
+            scale_mode:   SyphonOutScaleMode::Fill,
+            fit_rect_min: [0.0, 0.0],
+            fit_rect_max: [1.0, 1.0],
+            tex_w: 0, tex_h: 0,
+            drawable_w: 0, drawable_h: 0,
         };
         r.build_pipelines();
         r
+    }
+
+    pub fn set_scale_mode(&mut self, mode: SyphonOutScaleMode) {
+        self.scale_mode = mode;
+        self.update_fit_rect();
+    }
+
+    /// Recompute the letterbox/pillarbox UV rect from stored dimensions.
+    fn update_fit_rect(&mut self) {
+        if self.scale_mode == SyphonOutScaleMode::Fill
+            || self.tex_w == 0 || self.tex_h == 0
+            || self.drawable_w == 0 || self.drawable_h == 0
+        {
+            self.fit_rect_min = [0.0, 0.0];
+            self.fit_rect_max = [1.0, 1.0];
+            return;
+        }
+        let src_ar = self.tex_w as f32 / self.tex_h as f32;
+        let dst_ar = self.drawable_w as f32 / self.drawable_h as f32;
+        let (w, h) = if src_ar > dst_ar {
+            // Wider source → letterbox (black bars top/bottom)
+            (1.0f32, dst_ar / src_ar)
+        } else {
+            // Taller source → pillarbox (black bars left/right)
+            (src_ar / dst_ar, 1.0f32)
+        };
+        let x = (1.0 - w) * 0.5;
+        let y = (1.0 - h) * 0.5;
+        self.fit_rect_min = [x, y];
+        self.fit_rect_max = [x + w, y + h];
+    }
+
+    /// 16-byte FitUniforms blob: [minX, minY, maxX, maxY]
+    fn fit_bytes(&self) -> [f32; 4] {
+        [self.fit_rect_min[0], self.fit_rect_min[1],
+         self.fit_rect_max[0], self.fit_rect_max[1]]
     }
 
     pub fn set_crossfade_duration_ms(&mut self, ms: f64, fps: f64) {
@@ -119,6 +171,13 @@ impl MetalRenderer {
         self.current_texture  = Some(tex);
         self.blank_color       = None;
         self.show_test_pattern = false;
+
+        // Keep source dimensions for fit-rect computation.
+        if self.tex_w != width as u64 || self.tex_h != height as u64 {
+            self.tex_w = width as u64;
+            self.tex_h = height as u64;
+            self.update_fit_rect();
+        }
 
         if self.previous_texture.is_some() {
             self.crossfade_alpha = 0.0;
@@ -158,8 +217,6 @@ impl MetalRenderer {
     // ── Render ───────────────────────────────────────────────────────────────
 
     pub fn render_frame(&mut self) {
-        let Some(pipes) = &self.pipelines else { return };
-
         // Advance crossfade
         if self.is_crossfading {
             self.crossfade_alpha = (self.crossfade_alpha + self.crossfade_step).min(1.0);
@@ -169,17 +226,36 @@ impl MetalRenderer {
             }
         }
 
-        // Acquire CAMetalLayer drawable
+        // Acquire CAMetalLayer drawable BEFORE borrowing pipelines so the
+        // mutable borrow in update_fit_rect() doesn't conflict.
         let drawable: *mut AnyObject = unsafe { msg_send![self.layer, nextDrawable] };
         if drawable.is_null() { return; }
         let raw_tex: *mut AnyObject = unsafe { msg_send![drawable, texture] };
         if raw_tex.is_null() { return; }
 
+        // Update drawable dimensions for fit-rect computation (changes are rare).
+        {
+            let tex_ref_tmp: &TextureRef = unsafe { ForeignTypeRef::from_ptr(raw_tex as *mut _) };
+            let dw = tex_ref_tmp.width()  as u64;
+            let dh = tex_ref_tmp.height() as u64;
+            if dw != self.drawable_w || dh != self.drawable_h {
+                self.drawable_w = dw;
+                self.drawable_h = dh;
+                self.update_fit_rect();
+            }
+        }
+
+        // Snapshot fit uniforms before the immutable pipelines borrow.
+        let fit = self.fit_bytes();
+
+        // All mutable work done — now borrow pipelines immutably for the rest.
+        let Some(pipes) = &self.pipelines else { return };
+
         // Render pass targeting the drawable texture
+        let tex_ref: &TextureRef = unsafe { ForeignTypeRef::from_ptr(raw_tex as *mut _) };
         let rp = RenderPassDescriptor::new();
         {
             let ca = rp.color_attachments().object_at(0).unwrap();
-            let tex_ref: &TextureRef = unsafe { ForeignTypeRef::from_ptr(raw_tex as *mut _) };
             ca.set_texture(Some(tex_ref));
             ca.set_load_action(MTLLoadAction::Clear);
             ca.set_store_action(MTLStoreAction::Store);
@@ -190,10 +266,6 @@ impl MetalRenderer {
         let enc = cmd.new_render_command_encoder(&rp);
 
         let display_tex = self.frozen_texture.as_ref().or(self.current_texture.as_ref());
-
-        // metal 0.29 API: set_fragment_bytes(index, length, bytes)
-        //                 set_fragment_texture(index, Option<&TextureRef>)
-        //                 set_fragment_sampler_state(index, Option<&SamplerStateRef>)
 
         if self.show_test_pattern {
             enc.set_render_pipeline_state(&pipes.smpte_bars);
@@ -212,6 +284,7 @@ impl MetalRenderer {
                 enc.set_fragment_sampler_state(0, Some(self.sampler.as_ref()));
                 let alpha = self.crossfade_alpha;
                 unsafe { enc.set_fragment_bytes(0, 4, &alpha as *const f32 as *const _) };
+                unsafe { enc.set_fragment_bytes(1, 16, fit.as_ptr() as *const _) };
                 enc.draw_primitives(MTLPrimitiveType::Triangle, 0, 6);
             }
 
@@ -219,10 +292,11 @@ impl MetalRenderer {
             enc.set_render_pipeline_state(&pipes.passthrough);
             enc.set_fragment_texture(0, Some(tex.as_ref()));
             enc.set_fragment_sampler_state(0, Some(self.sampler.as_ref()));
+            unsafe { enc.set_fragment_bytes(0, 16, fit.as_ptr() as *const _) };
             enc.draw_primitives(MTLPrimitiveType::Triangle, 0, 6);
 
         } else {
-            // No source → black
+            // No source → black (clear color handles it)
             enc.set_render_pipeline_state(&pipes.solid_color);
             let black: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
             unsafe { enc.set_fragment_bytes(0, 16, black.as_ptr() as *const _) };

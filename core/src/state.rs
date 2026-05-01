@@ -33,6 +33,16 @@ pub enum SyphonOutSignal {
     NoSourceSelected = 2,
 }
 
+/// How the VD frame is scaled to fill the physical display.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyphonOutScaleMode {
+    /// Stretch to fill the entire display (may distort aspect ratio).
+    Fill = 0,
+    /// Scale to fit the shorter axis; black bars on the other two sides.
+    Fit  = 1,
+}
+
 /// Server description, passed to Swift callbacks.
 /// All pointers are valid only for the duration of the callback invocation.
 #[repr(C)]

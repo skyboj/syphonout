@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use std::sync::OnceLock;
 use std::collections::HashMap;
 
-pub use state::{SyphonOutIcon, SyphonOutMode, SyphonOutServerInfo, SyphonOutSignal};
+pub use state::{SyphonOutIcon, SyphonOutMode, SyphonOutScaleMode, SyphonOutServerInfo, SyphonOutSignal};
 
 use crate::core::SyphonOutCore;
 
@@ -152,6 +152,15 @@ pub unsafe extern "C" fn syphonout_physical_assign(
 ) {
     let uuid = CStr::from_ptr(vd_uuid).to_str().unwrap_or("");
     core().lock().physical_assign(display_id, uuid);
+}
+
+/// Set the scale mode (fill / fit) for a physical output.
+#[no_mangle]
+pub extern "C" fn syphonout_physical_set_scale_mode(
+    display_id: u32,
+    mode: SyphonOutScaleMode,
+) {
+    core().lock().physical_set_scale_mode(display_id, mode);
 }
 
 /// Unassign a physical output from its VirtualDisplay.

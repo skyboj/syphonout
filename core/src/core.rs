@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 
 use crate::output::PhysicalOutput;
-use crate::state::{SyphonOutIcon, SyphonOutMode, SyphonOutSignal};
+use crate::state::{SyphonOutIcon, SyphonOutMode, SyphonOutScaleMode, SyphonOutSignal};
 use crate::syphon::SyphonRegistry;
 use crate::virtual_display::VirtualDisplay;
 
@@ -124,6 +124,12 @@ impl SyphonOutCore {
             po.last_frame_serial = 0;
         }
         self.physical_assignments.insert(display_id, vd_uuid.to_string());
+    }
+
+    pub fn physical_set_scale_mode(&mut self, display_id: u32, mode: SyphonOutScaleMode) {
+        if let Some(po) = self.physical_outputs.get_mut(&display_id) {
+            po.set_scale_mode(mode);
+        }
     }
 
     pub fn physical_unassign(&mut self, display_id: u32) {

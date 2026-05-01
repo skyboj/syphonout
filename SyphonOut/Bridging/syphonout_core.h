@@ -18,6 +18,14 @@ typedef enum SyphonOutMode {
     SYPHON_OUT_MODE_OFF = 5,
 } SyphonOutMode;
 
+// How the VD frame is scaled to fill the physical display.
+typedef enum SyphonOutScaleMode {
+    // Stretch to fill the entire display (may distort aspect ratio).
+    SYPHON_OUT_SCALE_MODE_FILL = 0,
+    // Scale to fit the shorter axis; black bars on the other two sides.
+    SYPHON_OUT_SCALE_MODE_FIT = 1,
+} SyphonOutScaleMode;
+
 // Global menu-bar icon state.
 typedef enum SyphonOutIcon {
     // ● All active outputs have live signal
@@ -75,6 +83,9 @@ void syphonout_output_destroy(uint32_t display_id);
 
 // Assign a physical output to a VirtualDisplay.
 void syphonout_physical_assign(uint32_t display_id, const char *vd_uuid);
+
+// Set the scale mode (fill / fit) for a physical output.
+void syphonout_physical_set_scale_mode(uint32_t display_id, enum SyphonOutScaleMode mode);
 
 // Unassign a physical output from its VirtualDisplay.
 void syphonout_physical_unassign(uint32_t display_id);
@@ -142,10 +153,5 @@ void syphonout_on_new_frame(uint32_t display_id,
                             void *iosurface_ref,
                             uint32_t width,
                             uint32_t height);
-
-// Note: CFRetain/CFRelease are already declared in CoreFoundation framework
-// Using standard CoreFoundation declarations instead
-// Note: IOSurface functions are already declared in IOSurface framework
-// Using standard IOSurface framework declarations instead
 
 #endif  /* SYPHONOUT_CORE_H */

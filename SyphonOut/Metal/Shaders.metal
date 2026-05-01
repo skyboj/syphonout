@@ -22,14 +22,35 @@ vertex VertexOut vertexShader(uint vid [[vertex_id]]) {
     return out;
 }
 
+// MARK: - Fit uniforms (shared by passthrough and crossfade)
+//
+// minUV / maxUV define the visible rect in screen UV space [0,1].
+// fill mode  → minUV=(0,0) maxUV=(1,1)  → identity, no bars
+// fit  mode  → letterbox/pillarbox rect; pixels outside → black
+struct FitUniforms {
+    float2 minUV;   // top-left  of the visible rect  (e.g. 0.1, 0.0 for pillarbox)
+    float2 maxUV;   // bot-right of the visible rect  (e.g. 0.9, 1.0)
+};
+
+// Remap a screen UV that falls inside [fit.minUV, fit.maxUV] to texture [0,1].
+// Returns (remapped uv, true) or (0, false) if outside (→ black).
+static float2 fitUV(float2 uv, FitUniforms fit, thread bool &inside) {
+    inside = all(uv >= fit.minUV) && all(uv <= fit.maxUV);
+    return (uv - fit.minUV) / (fit.maxUV - fit.minUV);
+}
+
 // MARK: - Passthrough
 
 fragment float4 passthroughFragment(
     VertexOut in [[stage_in]],
     texture2d<float> tex [[texture(0)]],
+    constant FitUniforms &fit [[buffer(0)]],
     sampler smp [[sampler(0)]]
 ) {
-    return tex.sample(smp, in.texCoord);
+    bool inside;
+    float2 uv = fitUV(in.texCoord, fit, inside);
+    if (!inside) return float4(0, 0, 0, 1);
+    return tex.sample(smp, uv);
 }
 
 // MARK: - Crossfade blend (A → B over alpha 0→1)
@@ -43,10 +64,14 @@ fragment float4 crossfadeFragment(
     texture2d<float> texA [[texture(0)]],   // previous (outgoing)
     texture2d<float> texB [[texture(1)]],   // current  (incoming)
     constant CrossfadeUniforms &u [[buffer(0)]],
+    constant FitUniforms &fit [[buffer(1)]],
     sampler smp [[sampler(0)]]
 ) {
-    float4 colorA = texA.sample(smp, in.texCoord);
-    float4 colorB = texB.sample(smp, in.texCoord);
+    bool inside;
+    float2 uv = fitUV(in.texCoord, fit, inside);
+    if (!inside) return float4(0, 0, 0, 1);
+    float4 colorA = texA.sample(smp, uv);
+    float4 colorB = texB.sample(smp, uv);
     return mix(colorA, colorB, u.alpha);
 }
 

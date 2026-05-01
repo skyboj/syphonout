@@ -14,6 +14,7 @@
 		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
 		2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */; };
 		3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */; };
+		AA99BB11CC22DD33EE44FF55 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */; };
 		45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8942F1931F1F24B069C953E1 /* PreferencesStore.swift */; };
 		4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */; };
 		5B5439D70801FD8FEC97E714 /* libsyphonout_core.a in Resources */ = {isa = PBXBuildFile; fileRef = 2903710A6525AA33741D6B84 /* libsyphonout_core.a */; };
@@ -39,6 +40,7 @@
 		2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		449BA8049EFF6F7C91DEAE71 /* SOLinkClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SOLinkClient.h; sourceTree = "<group>"; };
 		4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		52880DDBD476A623D4A34DC1 /* SyphonNative.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SyphonNative.h; sourceTree = "<group>"; };
 		694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		6D2E17D479C268B8723504C7 /* SOLinkClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SOLinkClient.m; sourceTree = "<group>"; };
@@ -84,6 +86,7 @@
 			isa = PBXGroup;
 			children = (
 				4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */,
+				BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */,
 				769488A7B31024CC7CFA777C /* main.m */,
 			);
 			path = App;
@@ -301,6 +304,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */,
+				AA99BB11CC22DD33EE44FF55 /* HotkeyManager.swift in Sources */,
 				4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */,
 				615936C80098284B72BD790A /* OutputWindowController.swift in Sources */,
 				45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */,

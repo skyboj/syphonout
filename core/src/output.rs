@@ -6,7 +6,7 @@
 /// renderer state to `previous_texture` and starts a crossfade.
 
 use std::ffi::c_void;
-use crate::state::{SyphonOutMode, SyphonOutSignal};
+use crate::state::{SyphonOutMode, SyphonOutScaleMode, SyphonOutSignal};
 use crate::virtual_display::VirtualDisplay;
 
 #[cfg(not(test))]
@@ -56,6 +56,10 @@ impl PhysicalOutput {
 
     pub fn set_crossfade_duration_ms(&mut self, ms: f64) {
         self.renderer.set_crossfade_duration_ms(ms, self.display_fps);
+    }
+
+    pub fn set_scale_mode(&mut self, mode: SyphonOutScaleMode) {
+        self.renderer.set_scale_mode(mode);
     }
 
     /// Render one frame. `vd` is the currently assigned VirtualDisplay, if any.

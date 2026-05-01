@@ -225,6 +225,17 @@ extension StatusBarController {
         }
     }
 
+    @objc func setScaleMode(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let displayId = info["displayId"] as? CGDirectDisplayID,
+              let rawMode   = info["mode"]      as? UInt32
+        else { return }
+        let mode = SyphonOutScaleMode(rawValue: rawMode)
+        if let output = outputs.first(where: { $0.displayId == displayId }) {
+            output.setScaleMode(mode)
+        }
+    }
+
     @objc func toggleMirror(_ sender: NSMenuItem) {
         // Mirror: route all displays from the first output's server
         // Simple toggle: use the first output as primary source

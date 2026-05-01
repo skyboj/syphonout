@@ -195,6 +195,17 @@ final class VirtualDisplayManager: ObservableObject {
         save()
     }
 
+    /// Set the mode on every virtual display at once (used by global hotkeys).
+    func setAllModes(_ mode: SyphonOutMode) {
+        DispatchQueue.main.async { [self] in
+            for index in displays.indices {
+                displays[index].mode = mode
+                displays[index].id.withCString { syphonout_vd_set_mode($0, mode) }
+            }
+            save()
+        }
+    }
+
     func setSize(vdId: String, width: UInt32, height: UInt32) {
         guard let index = displays.firstIndex(where: { $0.id == vdId }) else { return }
         displays[index].width = width

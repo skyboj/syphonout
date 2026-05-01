@@ -51,6 +51,20 @@ final class PreferencesStore {
         defaults.set(dict, forKey: "displayAliases")
     }
 
+    // MARK: - Scale mode per physical display
+
+    func scaleMode(for displayID: CGDirectDisplayID) -> SyphonOutScaleMode {
+        let dict = defaults.dictionary(forKey: "physicalScaleModes") as? [String: Int] ?? [:]
+        let raw = dict[String(displayID)] ?? 0
+        return SyphonOutScaleMode(rawValue: UInt32(raw))
+    }
+
+    func setScaleMode(_ mode: SyphonOutScaleMode, for displayID: CGDirectDisplayID) {
+        var dict = defaults.dictionary(forKey: "physicalScaleModes") as? [String: Int] ?? [:]
+        dict[String(displayID)] = Int(mode.rawValue)
+        defaults.set(dict, forKey: "physicalScaleModes")
+    }
+
     // MARK: - Keyboard shortcuts (stored as keyCode + modifier flags raw value)
 
     struct KeyCombo {

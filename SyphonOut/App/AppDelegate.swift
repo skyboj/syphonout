@@ -77,6 +77,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handleScreenChange()
         }
 
+        // 9. Global hotkeys — ⌃⌥⌘K blank all, ⌃⌥⌘S restore all
+        HotkeyManager.shared.onBlankAll = {
+            VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_BLANK_BLACK)
+            Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkey").info("blank all (⌃⌥⌘K)")
+        }
+        HotkeyManager.shared.onRestoreAll = {
+            VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_SIGNAL)
+            Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkey").info("restore all (⌃⌥⌘S)")
+        }
+        HotkeyManager.shared.start()
+
         logger.info("SyphonOut started — \(self.outputs.count) display(s)")
     }
 

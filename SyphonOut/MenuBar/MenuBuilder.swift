@@ -253,6 +253,25 @@ enum MenuBuilder {
         assignItem.submenu = assignMenu
         menu.addItem(assignItem)
 
+        // Scale mode submenu (Fill / Fit)
+        let scaleMenu = NSMenu()
+        let currentScale = output.currentScaleMode
+        for (label, scaleMode) in [("Fill (stretch)", SYPHON_OUT_SCALE_MODE_FILL),
+                                    ("Fit (letterbox)", SYPHON_OUT_SCALE_MODE_FIT)] {
+            let item = NSMenuItem(
+                title: label,
+                action: #selector(StatusBarController.setScaleMode(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = ["displayId": output.displayId, "mode": scaleMode.rawValue] as [String: Any]
+            item.target = delegate
+            item.state = (currentScale == scaleMode) ? .on : .off
+            scaleMenu.addItem(item)
+        }
+        let scaleItem = NSMenuItem(title: "    Scale", action: nil, keyEquivalent: "")
+        scaleItem.submenu = scaleMenu
+        menu.addItem(scaleItem)
+
         // Legacy mode controls (still work via implicit VD when unassigned)
         if assignedVD == nil {
             for (title, mode, action) in modeItems(delegate: delegate) {

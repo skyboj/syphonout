@@ -60,7 +60,11 @@ final class OutputWindowController {
             backing: .buffered,
             defer: false
         )
-        win.level = NSWindow.Level(rawValue: 2000)   // above Mission Control (~1500)
+        // External displays: level 2000 (NSScreenSaverWindowLevel) — above Mission Control (~1500).
+        // Built-in MacBook display: level 1000 — above normal apps but below Mission Control,
+        // so the machine stays navigable while still covering the desktop.
+        let isBuiltin = CGDisplayIsBuiltin(displayId) != 0
+        win.level = NSWindow.Level(rawValue: isBuiltin ? 1000 : 2000)
         win.backgroundColor = .black
         win.isOpaque = true
         win.ignoresMouseEvents = true
@@ -110,6 +114,9 @@ final class OutputWindowController {
         guard let layer = metalLayer else { return }
         let ptr = Unmanaged.passUnretained(layer).toOpaque()
         syphonout_output_create(displayId, ptr)
+        // Restore persisted scale mode (Fill/Fit) for this display.
+        let savedMode = PreferencesStore.shared.scaleMode(for: displayId)
+        syphonout_physical_set_scale_mode(displayId, savedMode)
     }
 
     // MARK: - Mode / server API (called by StatusBarController)
@@ -139,6 +146,15 @@ final class OutputWindowController {
         syphonout_output_clear_server(displayId)
         SyphonNativeClearServer(displayId)
         SOLinkClientClearServer(displayId)
+    }
+
+    func setScaleMode(_ mode: SyphonOutScaleMode) {
+        syphonout_physical_set_scale_mode(displayId, mode)
+        PreferencesStore.shared.setScaleMode(mode, for: displayId)
+    }
+
+    var currentScaleMode: SyphonOutScaleMode {
+        PreferencesStore.shared.scaleMode(for: displayId)
     }
 
     // MARK: - CVDisplayLink render loop
