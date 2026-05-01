@@ -92,6 +92,13 @@ impl PhysicalOutput {
             if vd.mode == SyphonOutMode::Signal {
                 self.try_update_from_vd(vd);
             }
+        } else {
+            // No VD assigned — clear any leftover texture so the last frame
+            // doesn't stay frozen on the display after the user unassigns.
+            if self.last_vd_mode != SyphonOutMode::Off {
+                self.renderer.show_blank(SyphonOutMode::BlankBlack);
+                self.last_vd_mode = SyphonOutMode::Off;
+            }
         }
 
         self.renderer.render_frame();

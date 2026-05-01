@@ -18,10 +18,18 @@ final class OutputWindowController {
 
     private var currentMode: SyphonOutMode = SYPHON_OUT_MODE_SIGNAL
 
+    /// Human-readable name for `displayId` using the screen's localizedName as the default.
+    static func screenName(for displayId: CGDirectDisplayID) -> String {
+        if let alias = PreferencesStore.shared.displayAlias(for: displayId) { return alias }
+        if let screen = NSScreen.screens.first(where: {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == displayId
+        }) { return screen.localizedName }
+        return "Display \(CGDisplayUnitNumber(displayId))"
+    }
+
     init(display: CGDirectDisplayID) {
         self.displayId = display
-        self.displayAlias = PreferencesStore.shared.displayAlias(for: display)
-            ?? "Display \(CGDisplayUnitNumber(display))"
+        self.displayAlias = OutputWindowController.screenName(for: display)
         setupWindow()
         setupRustOutput()
         setupDisplayLink()

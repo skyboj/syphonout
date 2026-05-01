@@ -9,6 +9,16 @@ enum MenuBuilder {
         menu.addItem(header)
         menu.addItem(.separator())
 
+        // ── Window Routing — top of menu for quick access ──────────────────
+        let routingItem = NSMenuItem(
+            title: "Window Routing…",
+            action: #selector(StatusBarController.openWindowRouting(_:)),
+            keyEquivalent: ""
+        )
+        routingItem.target = delegate
+        menu.addItem(routingItem)
+        menu.addItem(.separator())
+
         // ── Virtual Displays ───────────────────────────────────────────────
         let vdHeader = NSMenuItem(title: "Virtual Displays", action: nil, keyEquivalent: "")
         vdHeader.isEnabled = false
@@ -46,15 +56,7 @@ enum MenuBuilder {
         }
         menu.addItem(.separator())
 
-        // ── Global actions ─────────────────────────────────────────────────
-        let routingItem = NSMenuItem(
-            title: "Window Routing…",
-            action: #selector(StatusBarController.openWindowRouting(_:)),
-            keyEquivalent: ""
-        )
-        routingItem.target = delegate
-        menu.addItem(routingItem)
-
+        // ── App actions ────────────────────────────────────────────────────
         let prefsItem = NSMenuItem(
             title: "Preferences…",
             action: #selector(StatusBarController.openPreferences(_:)),
@@ -272,14 +274,35 @@ enum MenuBuilder {
         scaleItem.submenu = scaleMenu
         menu.addItem(scaleItem)
 
-        // Legacy mode controls (still work via implicit VD when unassigned)
+        // Mode controls (only shown when no VD is assigned — legacy path)
         if assignedVD == nil {
-            for (title, mode, action) in modeItems(delegate: delegate) {
+            // Signal / Freeze / Off — direct items
+            for (title, action) in [
+                ("Signal", #selector(StatusBarController.setModeSignal(_:))),
+                ("Freeze", #selector(StatusBarController.setModeFreeze(_:))),
+                ("Off",    #selector(StatusBarController.setModeOff(_:))),
+            ] as [(String, Selector)] {
                 let item = NSMenuItem(title: "    \(title)", action: action, keyEquivalent: "")
                 item.representedObject = output
                 item.target = delegate
                 menu.addItem(item)
             }
+
+            // Blank variants — collected into a submenu
+            let blankMenu = NSMenu()
+            for (title, action) in [
+                ("Black",        #selector(StatusBarController.setModeBlackBlank(_:))),
+                ("White",        #selector(StatusBarController.setModeWhiteBlank(_:))),
+                ("Test Pattern", #selector(StatusBarController.setModeTestPattern(_:))),
+            ] as [(String, Selector)] {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.representedObject = output
+                item.target = delegate
+                blankMenu.addItem(item)
+            }
+            let blankItem = NSMenuItem(title: "    Blank…", action: nil, keyEquivalent: "")
+            blankItem.submenu = blankMenu
+            menu.addItem(blankItem)
 
             let signal = syphonout_get_signal_status(output.displayId)
             let statusText: String
@@ -293,19 +316,6 @@ enum MenuBuilder {
             statusItem.isEnabled = false
             menu.addItem(statusItem)
         }
-    }
-
-    // MARK: - Helpers
-
-    private static func modeItems(delegate _: StatusBarController) -> [(String, SyphonOutMode, Selector)] {
-        [
-            ("Signal",       SYPHON_OUT_MODE_SIGNAL,             #selector(StatusBarController.setModeSignal(_:))),
-            ("Freeze",       SYPHON_OUT_MODE_FREEZE,             #selector(StatusBarController.setModeFreeze(_:))),
-            ("Blank Black",  SYPHON_OUT_MODE_BLANK_BLACK,        #selector(StatusBarController.setModeBlackBlank(_:))),
-            ("Blank White",  SYPHON_OUT_MODE_BLANK_WHITE,        #selector(StatusBarController.setModeWhiteBlank(_:))),
-            ("Test Pattern", SYPHON_OUT_MODE_BLANK_TEST_PATTERN,  #selector(StatusBarController.setModeTestPattern(_:))),
-            ("Off",          SYPHON_OUT_MODE_OFF,                #selector(StatusBarController.setModeOff(_:))),
-        ]
     }
 
     static func availableServers() -> [(uuid: String, name: String, appName: String)] {

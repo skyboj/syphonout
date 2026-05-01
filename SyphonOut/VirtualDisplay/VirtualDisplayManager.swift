@@ -114,7 +114,7 @@ final class VirtualDisplayManager: ObservableObject {
         let uuid = UUID().uuidString
         let vd = VirtualDisplay(
             id: uuid,
-            name: name ?? "Display \(displays.count + 1)",
+            name: name ?? "Virtual Display \(displays.count + 1)",
             width: width,
             height: height,
             sourceUUID: nil,
@@ -146,7 +146,7 @@ final class VirtualDisplayManager: ObservableObject {
     private func createDefaultDisplay() {
         // Create the default VD but do NOT assign it to any physical output.
         // The user selects which physical display gets the signal via the menu.
-        createDisplay(name: "Channel 1")
+        createDisplay(name: "Virtual Display 1")
     }
 
     func setSource(vdId: String, sourceUUID: String) {
