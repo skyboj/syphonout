@@ -447,6 +447,18 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func beginCapture(info: WindowInfo, vdUUID: String) {
+        let vdName = VirtualDisplayManager.shared.displays.first { $0.id == vdUUID }?.name ?? "?"
+        AppLog.shared.info("WindowRouting: capture '\(info.appName)' (wid=\(info.id)) → vd='\(vdName)' (\(vdUUID.prefix(8))…)", category: "Routing")
+
+        // Make sure the target VD is in Signal mode — if it's Blank/Off the user
+        // would see nothing even though frames are flowing into the VD.
+        let vdm = VirtualDisplayManager.shared
+        if let vd = vdm.displays.first(where: { $0.id == vdUUID }),
+           vd.mode != SYPHON_OUT_MODE_SIGNAL {
+            AppLog.shared.info("WindowRouting: VD '\(vdName)' was \(vd.modeDescription) → switching to Signal", category: "Routing")
+            vdm.setMode(vdId: vdUUID, mode: SYPHON_OUT_MODE_SIGNAL)
+        }
+
         captureStatusLabel.stringValue = "Starting…"
         captureStatusLabel.textColor = .secondaryLabelColor
         updateActionBars()

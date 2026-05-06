@@ -54,6 +54,18 @@ final class VirtualDisplayManager: ObservableObject {
             // reconnect ObjC bridges for any VD that already has a source.
             reconnectAll()
         }
+        logStartupState()
+    }
+
+    private func logStartupState() {
+        AppLog.shared.info("VDManager init: \(displays.count) VD(s)", category: "VDManager")
+        for vd in displays {
+            AppLog.shared.info("  VD '\(vd.name)' uuid=\(vd.id.prefix(8))… mode=\(modeName(vd.mode)) size=\(vd.width)×\(vd.height)", category: "VDManager")
+        }
+        for (displayId, vdUUID) in assignments {
+            let vdName = displays.first { $0.id == vdUUID }?.name ?? vdUUID.prefix(8) + "…"
+            AppLog.shared.info("  assignment: display=\(displayId) → vd='\(vdName)' (\(vdUUID.prefix(8))…)", category: "VDManager")
+        }
     }
 
     private func load() {
@@ -245,7 +257,7 @@ final class VirtualDisplayManager: ObservableObject {
             syphonout_physical_assign(UInt32(displayId), vdC)
         }
         save()
-        AppLog.shared.info("assignPhysical display=\(displayId) → vd='\(vdName)'", category: "VDManager")
+        AppLog.shared.info("assignPhysical display=\(displayId) → vd='\(vdName)' (\(vdUUID.prefix(8))…)", category: "VDManager")
         NotificationCenter.default.post(
             name: .vdAssignmentChanged,
             object: nil,
