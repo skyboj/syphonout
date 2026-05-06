@@ -251,4 +251,17 @@ final class VirtualDisplayManager: ObservableObject {
         guard let vdId = assignments[displayId] else { return nil }
         return displays.first { $0.id == vdId }
     }
+
+    /// Reverse lookup: given a VD UUID, return the physical CGDirectDisplayID assigned to show it.
+    func assignedDisplay(for vdUUID: String) -> CGDirectDisplayID? {
+        assignments.first { $0.value == vdUUID }?.key
+    }
+
+    /// Reverse lookup: given a VD UUID, return the NSScreen currently showing it.
+    func assignedScreen(for vdUUID: String) -> NSScreen? {
+        guard let displayID = assignedDisplay(for: vdUUID) else { return nil }
+        return NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+        }
+    }
 }

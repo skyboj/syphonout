@@ -1,7 +1,10 @@
 import Foundation
 
-/// Registry of active WindowCapture sessions.
-/// Keyed by CGWindowID so each window can only route to one VD at a time.
+/// Registry of active window and display capture sessions.
+///
+/// - Window captures: keyed by CGWindowID — each window routes to one VD at a time.
+/// - Display captures: keyed by CGDirectDisplayID — each physical display routes to one VD.
+///
 /// All public methods must be called on the main thread.
 final class WindowCaptureManager {
 
@@ -10,7 +13,8 @@ final class WindowCaptureManager {
 
     // MARK: - State
 
-    private var captures: [CGWindowID: WindowCapture] = [:]
+    private var captures:        [CGWindowID: WindowCapture]          = [:]
+    private var displayCaptures: [CGDirectDisplayID: DisplayCapture]  = [:]
 
     // MARK: - Public API
 
@@ -61,8 +65,45 @@ final class WindowCaptureManager {
 
     /// Stop all active captures (e.g. on quit or VD destruction).
     func stopAll() {
-        for (id, capture) in captures { capture.stop(); _ = id }
+        for (_, capture) in captures { capture.stop() }
         captures.removeAll()
+        for (_, capture) in displayCaptures { capture.stop() }
+        displayCaptures.removeAll()
+    }
+
+    // MARK: - Display capture API
+
+    /// Start capturing the full physical display `displayID` and routing frames to `vdUUID`.
+    /// Any existing capture for that display is stopped first.
+    func startDisplayCapture(displayID: CGDirectDisplayID,
+                             vdUUID: String,
+                             completion: @escaping (Error?) -> Void) {
+        stopDisplayCapture(displayID: displayID)
+
+        let capture = DisplayCapture(displayID: displayID, vdUUID: vdUUID)
+        capture.onError = { [weak self] error in
+            self?.displayCaptures.removeValue(forKey: displayID)
+        }
+
+        displayCaptures[displayID] = capture
+        capture.start { [weak self] error in
+            if let error {
+                self?.displayCaptures.removeValue(forKey: displayID)
+                completion(error)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+
+    /// Stop any active display capture for `displayID`.
+    func stopDisplayCapture(displayID: CGDirectDisplayID) {
+        displayCaptures[displayID]?.stop()
+        displayCaptures.removeValue(forKey: displayID)
+    }
+
+    func isCapturingDisplay(_ displayID: CGDirectDisplayID) -> Bool {
+        displayCaptures[displayID] != nil
     }
 
     // MARK: - Query
