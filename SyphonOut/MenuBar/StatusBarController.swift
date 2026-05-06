@@ -236,6 +236,10 @@ extension StatusBarController {
         WindowRoutingWindowController.shared.showRouting()
     }
 
+    @objc func showLogViewer(_ sender: NSMenuItem) {
+        LogViewerWindowController.shared.showLog()
+    }
+
     @objc func openPreferences(_ sender: NSMenuItem) {
         PreferencesWindowController.shared.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

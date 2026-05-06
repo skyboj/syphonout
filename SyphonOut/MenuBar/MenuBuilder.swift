@@ -26,6 +26,15 @@ enum MenuBuilder {
         stopAllItem.target = delegate
         menu.addItem(stopAllItem)
 
+        let logItem = NSMenuItem(
+            title: "Show Log…",
+            action: #selector(StatusBarController.showLogViewer(_:)),
+            keyEquivalent: "l"
+        )
+        logItem.keyEquivalentModifierMask = [.command, .shift]
+        logItem.target = delegate
+        menu.addItem(logItem)
+
         // ── Presets ────────────────────────────────────────────────────────
         let pptItem = NSMenuItem(
             title: "PowerPoint Preset",

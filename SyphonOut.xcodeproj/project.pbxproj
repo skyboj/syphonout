@@ -11,6 +11,8 @@
 		EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF00AA11BB22CC33DD44EE55 /* PowerPointPreset.swift */; };
 		F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */; };
 		A0B1C2D3E4F5A6B7C8D9E0F1 /* DisplayCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A0B1C2D3E4F5A6B7C8D9E0 /* DisplayCapture.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */; };
+		C4D5E6F7A8B9C0D1E2F3A4B5 /* LogViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */; };
 		D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */; };
 		B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */; };
 		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
@@ -36,6 +38,8 @@
 		FF00AA11BB22CC33DD44EE55 /* PowerPointPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerPointPreset.swift; sourceTree = "<group>"; };
 		E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCapture.swift; sourceTree = "<group>"; };
 		F1A0B1C2D3E4F5A6B7C8D9E0 /* DisplayCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCapture.swift; sourceTree = "<group>"; };
+		A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerWindowController.swift; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMover.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventory.swift; sourceTree = "<group>"; };
 		17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputWindowController.swift; sourceTree = "<group>"; };
@@ -91,9 +95,18 @@
 			children = (
 				4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */,
 				BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */,
+				A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */,
 				769488A7B31024CC7CFA777C /* main.m */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		D6E7F8A9B0C1D2E3F4A5B6C7 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		2329919142B57BADD49FCAE6 /* Metal */ = {
@@ -169,6 +182,7 @@
 			children = (
 				1AFA4654EE25D979AF723726 /* App */,
 				9A566F36F557814BFF1E6C7D /* Bridging */,
+				D6E7F8A9B0C1D2E3F4A5B6C7 /* Logging */,
 				0FCB741CD642D7C47FCAF855 /* MenuBar */,
 				2329919142B57BADD49FCAE6 /* Metal */,
 				3328D44ADC0BC3F0C889C44B /* Output */,
@@ -319,6 +333,8 @@
 				D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */,
 				B8C9D0E1F2A1B2C3D4E5F6A7 /* WindowCaptureManager.swift in Sources */,
 				A0B1C2D3E4F5A6B7C8D9E0F1 /* DisplayCapture.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* AppLog.swift in Sources */,
+				C4D5E6F7A8B9C0D1E2F3A4B5 /* LogViewerWindowController.swift in Sources */,
 EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 				F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */,
 				27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */,
