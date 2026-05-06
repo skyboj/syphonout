@@ -30,7 +30,6 @@ final class PowerPointPreset {
     private(set) var isActive = false
 
     private let inventory  = WindowInventory()
-    private let logger     = Logger(subsystem: "com.syphonout.SyphonOut", category: "PPTPreset")
 
     /// Window ID currently captured for Slide Show. nil = waiting.
     private var slideShowWindowID: CGWindowID?
@@ -49,7 +48,7 @@ final class PowerPointPreset {
     func activate() {
         guard !isActive else { return }
         isActive = true
-        logger.info("PowerPoint preset activated")
+        AppLog.shared.info("PowerPoint preset activated", category: "PPTPreset")
 
         // Ensure target VDs are in Signal mode so output windows actually show.
         let vds = VirtualDisplayManager.shared.displays
@@ -66,7 +65,7 @@ final class PowerPointPreset {
     func deactivate() {
         guard isActive else { return }
         isActive = false
-        logger.info("PowerPoint preset deactivated")
+        AppLog.shared.info("PowerPoint preset deactivated", category: "PPTPreset")
 
         inventory.stop()
         inventory.onUpdate = nil
@@ -106,7 +105,7 @@ final class PowerPointPreset {
     private func applySlideShow(ppt: [WindowInfo], vdID: String) {
         guard let window = ppt.first(where: { isSlideShow($0) }) else {
             if slideShowWindowID != nil {
-                logger.info("PPT preset: Slide Show window gone — waiting for relaunch")
+                AppLog.shared.info("PPT preset: Slide Show window gone — waiting for relaunch", category: "PPTPreset")
                 slideShowWindowID = nil
             }
             return
@@ -115,21 +114,21 @@ final class PowerPointPreset {
         // Already handled this window.
         guard window.id != slideShowWindowID else { return }
 
-        logger.info("PPT preset: found Slide Show (wid=\(window.id)) → VD \(vdID)")
+        AppLog.shared.info("PPT preset: found Slide Show (wid=\(window.id)) → VD \(vdID)", category: "PPTPreset")
         slideShowWindowID = window.id
 
         // 1. Move to presentation screen + enter native fullscreen.
         if let screen = presentationScreen(for: vdID) {
-            logger.info("PPT preset: moving Slide Show to \(screen.localizedName) + fullscreen")
+            AppLog.shared.info("PPT preset: moving Slide Show to \(screen.localizedName) + fullscreen", category: "PPTPreset")
             WindowMover.move(window, to: screen, resize: false, fullscreen: true)
         } else {
-            logger.warning("PPT preset: no presentation screen found — skipping fullscreen move")
+            AppLog.shared.warn("PPT preset: no presentation screen found — skipping fullscreen move", category: "PPTPreset")
         }
 
         // 2. Capture window to VD[0] for Syphon/OBS routing.
         WindowCaptureManager.shared.startCapture(windowID: window.id, vdUUID: vdID) { [weak self] error in
             if let error {
-                self?.logger.error("PPT preset: Slide Show capture failed: \(error.localizedDescription)")
+                AppLog.shared.error("PPT preset: Slide Show capture failed: \(error.localizedDescription)", category: "PPTPreset")
                 self?.slideShowWindowID = nil   // allow retry on next reconcile
             }
         }
@@ -158,16 +157,16 @@ final class PowerPointPreset {
         guard presenterDisplayID == nil else { return }   // already capturing
 
         guard let builtinID = builtInDisplayID() else {
-            logger.warning("PPT preset: no built-in display found — Presenter View capture skipped")
+            AppLog.shared.warn("PPT preset: no built-in display found — Presenter View capture skipped", category: "PPTPreset")
             return
         }
 
-        logger.info("PPT preset: capturing built-in display (\(builtinID)) → VD \(vdID)")
+        AppLog.shared.info("PPT preset: capturing built-in display (\(builtinID)) → VD \(vdID)", category: "PPTPreset")
         presenterDisplayID = builtinID
 
         WindowCaptureManager.shared.startDisplayCapture(displayID: builtinID, vdUUID: vdID) { [weak self] error in
             if let error {
-                self?.logger.error("PPT preset: built-in display capture failed: \(error.localizedDescription)")
+                AppLog.shared.error("PPT preset: built-in display capture failed: \(error.localizedDescription)", category: "PPTPreset")
                 self?.presenterDisplayID = nil   // allow retry
             }
         }

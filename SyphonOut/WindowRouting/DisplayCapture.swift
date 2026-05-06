@@ -21,6 +21,10 @@ final class DisplayCapture: NSObject {
         label: "com.syphonout.DisplayCapture.frames", qos: .userInteractive)
     private var stopped = false
 
+    // Frame-rate stats (logged every ~2 seconds to "FrameStats" category).
+    private var frameCount: Int = 0
+    private var statsWindowStart: Date = Date()
+
     /// Called on main thread when the stream stops unexpectedly.
     var onError: ((Error) -> Void)?
 
@@ -32,15 +36,18 @@ final class DisplayCapture: NSObject {
     // MARK: - Start
 
     func start(completion: @escaping (Error?) -> Void) {
+        AppLog.shared.info("DisplayCapture.start displayID=\(displayID) → vd=\(vdUUID.prefix(8))…", category: "DisplayCap")
         SCShareableContent.getExcludingDesktopWindows(
             true, onScreenWindowsOnly: false
         ) { [weak self] content, error in
             guard let self else { return }
             if let error {
+                AppLog.shared.error("DisplayCapture SCShareableContent error: \(error.localizedDescription)", category: "DisplayCap")
                 DispatchQueue.main.async { completion(error) }
                 return
             }
             guard let scDisplay = content?.displays.first(where: { $0.displayID == self.displayID }) else {
+                AppLog.shared.error("DisplayCapture: display \(self.displayID) not in shareable content", category: "DisplayCap")
                 DispatchQueue.main.async {
                     completion(NSError(
                         domain: "DisplayCapture", code: -1,
@@ -84,7 +91,13 @@ final class DisplayCapture: NSObject {
 
         s.startCapture { [weak self] error in
             DispatchQueue.main.async {
-                if error == nil { self?.stream = s }
+                if let error {
+                    AppLog.shared.error("DisplayCapture.startCapture failed: \(error.localizedDescription)", category: "DisplayCap")
+                } else {
+                    self?.stream = s
+                    self?.statsWindowStart = Date()
+                    AppLog.shared.info("DisplayCapture stream started (\(cfg.width)×\(cfg.height))", category: "DisplayCap")
+                }
                 completion(error)
             }
         }
@@ -97,6 +110,7 @@ final class DisplayCapture: NSObject {
         stopped = true
         stream?.stopCapture { _ in }
         stream = nil
+        AppLog.shared.info("DisplayCapture.stop displayID=\(displayID)", category: "DisplayCap")
     }
 }
 
@@ -120,6 +134,23 @@ extension DisplayCapture: SCStreamOutput {
         vdUUID.withCString { vdC in
             syphonout_on_new_frame_vd(vdC, rawPtr, width, height)
         }
+
+        recordFrameStat()
+    }
+
+    /// Counts frames and emits an FPS log line every 2 seconds.
+    private func recordFrameStat() {
+        frameCount += 1
+        let elapsed = Date().timeIntervalSince(statsWindowStart)
+        if elapsed >= 2.0 {
+            let fps = Double(frameCount) / elapsed
+            AppLog.shared.info(
+                String(format: "displayID=%u %d frames in %.2fs = %.1f fps", displayID, frameCount, elapsed, fps),
+                category: "FrameStats"
+            )
+            frameCount = 0
+            statsWindowStart = Date()
+        }
     }
 }
 
@@ -128,6 +159,7 @@ extension DisplayCapture: SCStreamOutput {
 extension DisplayCapture: SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        AppLog.shared.error("DisplayCapture stream stopped with error (displayID=\(displayID)): \(error.localizedDescription)", category: "DisplayCap")
         guard !stopped else { return }
         stopped = true
         self.stream = nil

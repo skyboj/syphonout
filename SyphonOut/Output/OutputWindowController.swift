@@ -115,11 +115,13 @@ final class OutputWindowController {
         if displayLink.map({ !CVDisplayLinkIsRunning($0) }) == true {
             CVDisplayLinkStart(displayLink!)
         }
+        AppLog.shared.info("showOutput display=\(displayId)", category: "Output")
     }
 
     /// Hide the output window (call when the VD assignment is removed).
     func hideOutput() {
         window?.orderOut(nil)
+        AppLog.shared.info("hideOutput display=\(displayId)", category: "Output")
     }
 
     // MARK: - Rust output registration
@@ -138,9 +140,11 @@ final class OutputWindowController {
     func setMode(_ mode: SyphonOutMode) {
         currentMode = mode
         syphonout_output_set_mode(displayId, mode)
+        AppLog.shared.info("setMode display=\(displayId) → \(modeName(mode))", category: "Output")
     }
 
     func setServer(uuid: String) {
+        AppLog.shared.info("setServer display=\(displayId) uuid=\(uuid)", category: "Output")
         uuid.withCString { cStr in
             syphonout_output_set_server(displayId, cStr)
         }
@@ -152,7 +156,7 @@ final class OutputWindowController {
         } else {
             // Syphon server: connect via dlopen'd SyphonClient
             uuid.withCString { SyphonNativeSetServer(displayId, $0) }
-            SOLinkClientClearServer(displayId)  // make sure SOLink is off
+            SOLinkClientClearServer(displayId)
         }
     }
 
@@ -160,11 +164,26 @@ final class OutputWindowController {
         syphonout_output_clear_server(displayId)
         SyphonNativeClearServer(displayId)
         SOLinkClientClearServer(displayId)
+        AppLog.shared.info("clearServer display=\(displayId)", category: "Output")
     }
 
     func setScaleMode(_ mode: SyphonOutScaleMode) {
         syphonout_physical_set_scale_mode(displayId, mode)
         PreferencesStore.shared.setScaleMode(mode, for: displayId)
+        let label = (mode == SYPHON_OUT_SCALE_MODE_FILL) ? "Fill" : "Fit"
+        AppLog.shared.info("setScaleMode display=\(displayId) → \(label)", category: "Output")
+    }
+
+    private func modeName(_ mode: SyphonOutMode) -> String {
+        switch mode {
+        case SYPHON_OUT_MODE_SIGNAL:             return "Signal"
+        case SYPHON_OUT_MODE_FREEZE:             return "Freeze"
+        case SYPHON_OUT_MODE_BLANK_BLACK:        return "BlankBlack"
+        case SYPHON_OUT_MODE_BLANK_WHITE:        return "BlankWhite"
+        case SYPHON_OUT_MODE_BLANK_TEST_PATTERN: return "TestPattern"
+        case SYPHON_OUT_MODE_OFF:                return "Off"
+        default: return "Mode(\(mode.rawValue))"
+        }
     }
 
     var currentScaleMode: SyphonOutScaleMode {

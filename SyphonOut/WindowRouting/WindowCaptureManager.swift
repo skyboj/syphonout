@@ -78,6 +78,7 @@ final class WindowCaptureManager {
     func startDisplayCapture(displayID: CGDirectDisplayID,
                              vdUUID: String,
                              completion: @escaping (Error?) -> Void) {
+        AppLog.shared.info("Manager.startDisplayCapture displayID=\(displayID) → vd=\(vdUUID.prefix(8))…", category: "Capture")
         stopDisplayCapture(displayID: displayID)
 
         let capture = DisplayCapture(displayID: displayID, vdUUID: vdUUID)

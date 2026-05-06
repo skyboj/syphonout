@@ -38,7 +38,15 @@ enum WindowMover {
                      resize: Bool = false,
                      fullscreen: Bool = false) -> MoveResult {
 
-        guard AXIsProcessTrusted() else { return .noAccessibility }
+        AppLog.shared.info(
+            "move app='\(window.appName)' title='\(window.title)' → screen='\(screen.localizedName)' resize=\(resize) fullscreen=\(fullscreen)",
+            category: "WindowMover"
+        )
+
+        guard AXIsProcessTrusted() else {
+            AppLog.shared.error("move: noAccessibility — AXIsProcessTrusted=false", category: "WindowMover")
+            return .noAccessibility
+        }
 
         let app = AXUIElementCreateApplication(window.pid)
 
@@ -49,6 +57,7 @@ enum WindowMover {
         }
 
         guard let axWindow = findAXWindow(in: windowList, matching: window) else {
+            AppLog.shared.error("move: windowNotFound (could not match AXUIElement to '\(window.title)')", category: "WindowMover")
             return .windowNotFound
         }
 
@@ -114,7 +123,11 @@ enum WindowMover {
         let err = AXUIElementSetAttributeValue(axWindow,
                                                "AXFullScreen" as CFString,
                                                kCFBooleanTrue)
-        if err == .success { return }
+        if err == .success {
+            AppLog.shared.info("enterFullscreen via AXFullScreen attribute → success", category: "WindowMover")
+            return
+        }
+        AppLog.shared.warn("enterFullscreen AXFullScreen failed (\(err.rawValue)) — falling back to zoom button", category: "WindowMover")
 
         // Attempt 2: press the zoom (green) button — in macOS 10.15+ this enters fullscreen
         var rawBtn: CFTypeRef?
@@ -122,7 +135,14 @@ enum WindowMover {
                                          kAXZoomButtonAttribute as CFString,
                                          &rawBtn) == .success,
            let btn = rawBtn {
-            AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString)
+            let pressErr = AXUIElementPerformAction(btn as! AXUIElement, kAXPressAction as CFString)
+            if pressErr == .success {
+                AppLog.shared.info("enterFullscreen via green button press → success", category: "WindowMover")
+            } else {
+                AppLog.shared.error("enterFullscreen green button press failed: \(pressErr.rawValue)", category: "WindowMover")
+            }
+        } else {
+            AppLog.shared.error("enterFullscreen: zoom button attribute not available", category: "WindowMover")
         }
     }
 

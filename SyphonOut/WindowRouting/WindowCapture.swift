@@ -34,6 +34,10 @@ final class WindowCapture: NSObject {
         label: "com.syphonout.WindowCapture.frames", qos: .userInteractive)
     private var stopped = false
 
+    // Frame-rate stats (logged every ~2 seconds to "FrameStats" category).
+    private var frameCount: Int = 0
+    private var statsWindowStart: Date = Date()
+
     // Called on main thread when the stream stops unexpectedly.
     var onError: ((Error) -> Void)?
 
@@ -45,6 +49,7 @@ final class WindowCapture: NSObject {
     // MARK: - Start
 
     func start(completion: @escaping (Error?) -> Void) {
+        AppLog.shared.info("WindowCapture.start wid=\(windowID) → vd=\(vdUUID.prefix(8))…", category: "Capture")
         // Look up the live SCWindow by ID.
         // onScreenWindowsOnly: false — must include windows on ALL Spaces/displays
         // so we can capture presentation windows that are on external displays or
@@ -54,6 +59,7 @@ final class WindowCapture: NSObject {
         ) { [weak self] content, error in
             guard let self else { return }
             if let error {
+                AppLog.shared.error("SCShareableContent error: \(error.localizedDescription)", category: "Capture")
                 DispatchQueue.main.async { completion(error) }
                 return
             }
@@ -62,6 +68,7 @@ final class WindowCapture: NSObject {
                       CGWindowID($0.windowID) == self.windowID
                   })
             else {
+                AppLog.shared.error("WindowCapture: window \(self.windowID) not found in shareable content", category: "Capture")
                 DispatchQueue.main.async {
                     completion(WindowCaptureError.windowNotFound)
                 }
@@ -99,7 +106,13 @@ final class WindowCapture: NSObject {
 
         s.startCapture { [weak self] error in
             DispatchQueue.main.async {
-                if error == nil { self?.stream = s }
+                if let error {
+                    AppLog.shared.error("WindowCapture.startCapture failed: \(error.localizedDescription)", category: "Capture")
+                } else {
+                    self?.stream = s
+                    self?.statsWindowStart = Date()
+                    AppLog.shared.info("WindowCapture stream started (wid=\(self?.windowID ?? 0), \(cfg.width)×\(cfg.height))", category: "Capture")
+                }
                 completion(error)
             }
         }
@@ -112,6 +125,7 @@ final class WindowCapture: NSObject {
         stopped = true
         stream?.stopCapture { _ in }
         stream = nil
+        AppLog.shared.info("WindowCapture.stop wid=\(windowID)", category: "Capture")
     }
 }
 
@@ -140,6 +154,23 @@ extension WindowCapture: SCStreamOutput {
         vdUUID.withCString { vdC in
             syphonout_on_new_frame_vd(vdC, rawPtr, width, height)
         }
+
+        recordFrameStat()
+    }
+
+    /// Counts frames and emits an FPS log line every 2 seconds.
+    private func recordFrameStat() {
+        frameCount += 1
+        let elapsed = Date().timeIntervalSince(statsWindowStart)
+        if elapsed >= 2.0 {
+            let fps = Double(frameCount) / elapsed
+            AppLog.shared.info(
+                String(format: "wid=%u %d frames in %.2fs = %.1f fps", windowID, frameCount, elapsed, fps),
+                category: "FrameStats"
+            )
+            frameCount = 0
+            statsWindowStart = Date()
+        }
     }
 }
 
@@ -148,6 +179,7 @@ extension WindowCapture: SCStreamOutput {
 extension WindowCapture: SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        AppLog.shared.error("WindowCapture stream stopped with error (wid=\(windowID)): \(error.localizedDescription)", category: "Capture")
         guard !stopped else { return }
         stopped = true
         self.stream = nil

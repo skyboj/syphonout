@@ -127,12 +127,14 @@ final class VirtualDisplayManager: ObservableObject {
             }
         }
         save()
+        AppLog.shared.info("createDisplay name='\(vd.name)' \(width)×\(height) id=\(uuid.prefix(8))…", category: "VDManager")
         NotificationCenter.default.post(name: .vdListChanged, object: nil)
         return vd
     }
 
     func destroyDisplay(id: String) {
         guard let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        let name = displays[index].name
         let affected = assignments.filter { $0.value == id }.map { $0.key }
         for displayId in affected {
             unassignPhysical(displayId: displayId)
@@ -140,6 +142,7 @@ final class VirtualDisplayManager: ObservableObject {
         id.withCString { syphonout_vd_destroy($0) }
         displays.remove(at: index)
         save()
+        AppLog.shared.info("destroyDisplay name='\(name)' id=\(id.prefix(8))…", category: "VDManager")
         NotificationCenter.default.post(name: .vdListChanged, object: nil)
     }
 
@@ -151,7 +154,9 @@ final class VirtualDisplayManager: ObservableObject {
 
     func setSource(vdId: String, sourceUUID: String) {
         guard let index = displays.firstIndex(where: { $0.id == vdId }) else { return }
+        let vdName = displays[index].name
         displays[index].sourceUUID = sourceUUID
+        AppLog.shared.info("setSource vd='\(vdName)' src=\(sourceUUID)", category: "VDManager")
 
         // Update Rust state
         vdId.withCString { vdC in
@@ -179,7 +184,9 @@ final class VirtualDisplayManager: ObservableObject {
 
     func clearSource(vdId: String) {
         guard let index = displays.firstIndex(where: { $0.id == vdId }) else { return }
+        let vdName = displays[index].name
         displays[index].sourceUUID = nil
+        AppLog.shared.info("clearSource vd='\(vdName)'", category: "VDManager")
         vdId.withCString { vdC in
             syphonout_vd_clear_source(vdC)
             SyphonNativeClearServerForVD(vdC)
@@ -189,15 +196,21 @@ final class VirtualDisplayManager: ObservableObject {
     }
 
     func setMode(vdId: String, mode: SyphonOutMode) {
-        guard let index = displays.firstIndex(where: { $0.id == vdId }) else { return }
+        guard let index = displays.firstIndex(where: { $0.id == vdId }) else {
+            AppLog.shared.warn("setMode: VD \(vdId.prefix(8))… not found", category: "VDManager")
+            return
+        }
+        let vdName = displays[index].name
         displays[index].mode = mode
         vdId.withCString { syphonout_vd_set_mode($0, mode) }
         save()
+        AppLog.shared.info("setMode vd='\(vdName)' → \(displays[index].modeDescription)", category: "VDManager")
     }
 
     /// Set the mode on every virtual display at once (used by global hotkeys).
     func setAllModes(_ mode: SyphonOutMode) {
         DispatchQueue.main.async { [self] in
+            AppLog.shared.info("setAllModes → \(modeName(mode)) (\(displays.count) VDs)", category: "VDManager")
             for index in displays.indices {
                 displays[index].mode = mode
                 displays[index].id.withCString { syphonout_vd_set_mode($0, mode) }
@@ -208,10 +221,12 @@ final class VirtualDisplayManager: ObservableObject {
 
     func setSize(vdId: String, width: UInt32, height: UInt32) {
         guard let index = displays.firstIndex(where: { $0.id == vdId }) else { return }
+        let vdName = displays[index].name
         displays[index].width = width
         displays[index].height = height
         vdId.withCString { syphonout_vd_set_size($0, width, height) }
         save()
+        AppLog.shared.info("setSize vd='\(vdName)' → \(width)×\(height)", category: "VDManager")
     }
 
     func setName(vdId: String, name: String) {
@@ -224,11 +239,13 @@ final class VirtualDisplayManager: ObservableObject {
     }
 
     func assignPhysical(displayId: CGDirectDisplayID, vdUUID: String) {
+        let vdName = displays.first { $0.id == vdUUID }?.name ?? vdUUID.prefix(8) + "…"
         assignments[displayId] = vdUUID
         vdUUID.withCString { vdC in
             syphonout_physical_assign(UInt32(displayId), vdC)
         }
         save()
+        AppLog.shared.info("assignPhysical display=\(displayId) → vd='\(vdName)'", category: "VDManager")
         NotificationCenter.default.post(
             name: .vdAssignmentChanged,
             object: nil,
@@ -240,11 +257,25 @@ final class VirtualDisplayManager: ObservableObject {
         assignments.removeValue(forKey: displayId)
         syphonout_physical_unassign(UInt32(displayId))
         save()
+        AppLog.shared.info("unassignPhysical display=\(displayId)", category: "VDManager")
         NotificationCenter.default.post(
             name: .vdAssignmentChanged,
             object: nil,
             userInfo: ["displayId": displayId, "assigned": false]
         )
+    }
+
+    /// Helper for logging — converts a SyphonOutMode value to a short human-readable name.
+    private func modeName(_ mode: SyphonOutMode) -> String {
+        switch mode {
+        case SYPHON_OUT_MODE_SIGNAL:             return "Signal"
+        case SYPHON_OUT_MODE_FREEZE:             return "Freeze"
+        case SYPHON_OUT_MODE_BLANK_BLACK:        return "BlankBlack"
+        case SYPHON_OUT_MODE_BLANK_WHITE:        return "BlankWhite"
+        case SYPHON_OUT_MODE_BLANK_TEST_PATTERN: return "TestPattern"
+        case SYPHON_OUT_MODE_OFF:                return "Off"
+        default: return "Mode(\(mode.rawValue))"
+        }
     }
 
     func assignedVD(for displayId: CGDirectDisplayID) -> VirtualDisplay? {

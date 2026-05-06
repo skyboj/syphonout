@@ -26,7 +26,6 @@ final class HotkeyManager {
 
     private var hotKeyRefs: [EventHotKeyRef] = []
     private var handlerRef: EventHandlerRef?
-    private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "Hotkeys")
 
     // Four-char signature "SYPH" packed as UInt32
     private static let sig: FourCharCode = (0x53 << 24) | (0x59 << 16) | (0x50 << 8) | 0x48
@@ -44,14 +43,14 @@ final class HotkeyManager {
         guard handlerRef == nil else { return }
         installCarbonHandler()
         registerAll()
-        logger.info("HotkeyManager started (Carbon) — \(self.hotKeyRefs.count) hotkeys registered")
+        AppLog.shared.info("HotkeyManager started (Carbon) — \(self.hotKeyRefs.count) hotkeys registered", category: "Hotkey")
     }
 
     func stop() {
         hotKeyRefs.forEach { UnregisterEventHotKey($0) }
         hotKeyRefs.removeAll()
         if let ref = handlerRef { RemoveEventHandler(ref); handlerRef = nil }
-        logger.info("HotkeyManager stopped")
+        AppLog.shared.info("HotkeyManager stopped", category: "Hotkey")
     }
 
     // MARK: - Carbon event handler
@@ -83,13 +82,15 @@ final class HotkeyManager {
                 )
 
                 DispatchQueue.main.async {
+                    let name: String
                     switch hkID.id {
-                    case HotkeyManager.idFreeze:   mgr.onFreezeAll?()
-                    case HotkeyManager.idUnfreeze: mgr.onUnfreezeAll?()
-                    case HotkeyManager.idBlank:    mgr.onBlankAll?()
-                    case HotkeyManager.idRestore:  mgr.onRestoreAll?()
-                    default: break
+                    case HotkeyManager.idFreeze:   name = "freeze";    mgr.onFreezeAll?()
+                    case HotkeyManager.idUnfreeze: name = "unfreeze";  mgr.onUnfreezeAll?()
+                    case HotkeyManager.idBlank:    name = "blank";     mgr.onBlankAll?()
+                    case HotkeyManager.idRestore:  name = "restore";   mgr.onRestoreAll?()
+                    default: name = "unknown(\(hkID.id))"
                     }
+                    AppLog.shared.info("hotkey fired: \(name)", category: "Hotkey")
                 }
                 return noErr
             },
@@ -122,7 +123,7 @@ final class HotkeyManager {
         if status == noErr, let ref {
             hotKeyRefs.append(ref)
         } else {
-            logger.warning("RegisterEventHotKey failed for id=\(id), status=\(status) — combo may be taken by another app")
+            AppLog.shared.warn("RegisterEventHotKey failed for id=\(id), status=\(status) — combo may be taken by another app", category: "Hotkey")
         }
     }
 
