@@ -141,6 +141,22 @@ final class OutputWindowController {
         currentMode = mode
         syphonout_output_set_mode(displayId, mode)
         AppLog.shared.info("setMode display=\(displayId) → \(modeName(mode))", category: "Output")
+
+        // Any mode other than Off should make the output window visible.
+        // This handles the case where the window was hidden by hideOutput()
+        // (e.g. after unassigning a VD) and the user picks TestPattern or
+        // another mode directly — we must re-show the window so it's visible.
+        if mode == SYPHON_OUT_MODE_OFF {
+            window?.orderOut(nil)
+        } else {
+            if window?.isVisible == false {
+                AppLog.shared.info("setMode: window was hidden → showing display=\(displayId)", category: "Output")
+                window?.makeKeyAndOrderFront(nil)
+                if displayLink.map({ !CVDisplayLinkIsRunning($0) }) == true {
+                    CVDisplayLinkStart(displayLink!)
+                }
+            }
+        }
     }
 
     func setServer(uuid: String) {
