@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 
 /// PowerPoint Presentation Setup panel.
 ///
@@ -395,25 +396,14 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
         let watcher = WindowInventory()
-        var monitorAlreadySet = false   // avoid spamming AppleScript every 0.5s
+        var swapAttempted = false   // clicked swap button once already
+        var ticksAfterSwap = 0      // how many 0.5s ticks we've waited after swap
 
         watcher.onUpdate = { [weak self] (windows: [WindowInfo]) in
             guard let self else { return }
 
             let pptWindows = windows.filter { $0.appName.localizedCaseInsensitiveContains("PowerPoint") }
             guard !pptWindows.isEmpty else { return }
-
-            // Dump every PPT window and the current NSScreen list so we can see
-            // exactly what's happening if the slide show ends up on the wrong display.
-            let screenDump = NSScreen.screens.enumerated().map { i, s -> String in
-                let did = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
-                return "[\(i)] \(s.localizedName) id=\(did) frame=\(s.frame)"
-            }.joined(separator: " | ")
-            AppLog.shared.info("PPT watcher: NSScreen.screens → \(screenDump)", category: "PPTSetup")
-
-            for w in pptWindows {
-                AppLog.shared.info("PPT watcher: window '\(w.title)' frame=\(w.frame)", category: "PPTSetup")
-            }
 
             // Wait until the Slide Show window appears.
             guard let slideShowWindow = pptWindows.first(where: {
@@ -435,7 +425,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
             let alreadyOnTarget = targetScreen.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
             AppLog.shared.info(
-                "PPT watcher: slideShow midpoint=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) frame=\(targetScreen.frame) onTarget=\(alreadyOnTarget)",
+                "PPT watcher: slideShow mid=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) frame=\(targetScreen.frame) onTarget=\(alreadyOnTarget)",
                 category: "PPTSetup"
             )
 
@@ -443,26 +433,140 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 AppLog.shared.info("PPT watcher: Slide Show is on \(targetScreen.localizedName) ✓", category: "PPTSetup")
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
                 self.stopSlideShowWatcher()
-            } else {
-                // Slide Show is on MacBook, Presenter View is on external (PPT swapped them).
-                // Use WindowMover with fullscreen=true: it exits AXFullScreen, moves the
-                // window to the target display, then re-enters native fullscreen.
-                // AppleScript restart (end show + run) fails with -32192 while the show
-                // is in fullscreen mode, so AX is the only path.
+
+            } else if !swapAttempted {
+                // First detection of wrong display — click "Swap Displays" in Presenter View.
+                swapAttempted = true
+                ticksAfterSwap = 0
+                let pid = pid_t(slideShowWindow.pid)
                 AppLog.shared.warn(
-                    "PPT watcher: Slide Show on wrong display — AX move+fullscreen to \(targetScreen.localizedName)",
+                    "PPT watcher: Slide Show on WRONG display — clicking Swap Displays (pid=\(pid))",
                     category: "PPTSetup"
                 )
-                // fullscreen: false → WindowMover detects AXFullScreen=true, exits FS,
-                // moves to targetScreen, then re-enters native fullscreen on that screen.
-                WindowMover.move(slideShowWindow, to: targetScreen, resize: false, fullscreen: false)
-                self.setStatus("↩ Moving Slide Show → \(targetScreen.localizedName)")
-                self.stopSlideShowWatcher()
+                self.setStatus("↩ Swapping displays…")
+                self.clickSwapDisplaysInPresenterView(pid: pid)
+                // Keep watcher running — next ticks will verify the swap took effect.
+
+            } else {
+                // Swap was already attempted; still wrong — keep polling for a while.
+                ticksAfterSwap += 1
+                if ticksAfterSwap >= 20 {   // ~10 seconds
+                    AppLog.shared.warn("PPT watcher: swap attempted but Slide Show still on wrong display after 10s — giving up", category: "PPTSetup")
+                    self.setStatus("⚠ Could not move Slide Show — swap it manually in Presenter View")
+                    self.stopSlideShowWatcher()
+                }
             }
         }
         // Fast polling: catch PPT before it commits to fullscreen on wrong display.
         watcher.start(interval: 0.5)
         slideShowWatcher = watcher
+    }
+
+    // MARK: - AX "Swap Displays" button click
+
+    /// Finds and clicks the "Swap Displays" button in PPT's Presenter View via the
+    /// Accessibility API.  This is equivalent to the user clicking the swap button
+    /// in the Presenter View toolbar — and works even when the Slide Show is in
+    /// fullscreen on a different macOS Space.
+    private func clickSwapDisplaysInPresenterView(pid: pid_t) {
+        let app = AXUIElementCreateApplication(pid)
+
+        var rawWindows: CFTypeRef?
+        let winErr = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
+        guard winErr == .success, let windows = rawWindows as? [AXUIElement], !windows.isEmpty else {
+            AppLog.shared.warn("PPT AX swap: no windows for pid=\(pid) err=\(winErr.rawValue)", category: "PPTSetup")
+            return
+        }
+
+        // Log all windows so we can see what AX returns.
+        for (i, win) in windows.enumerated() {
+            var rawTitle: CFTypeRef?
+            AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &rawTitle)
+            AppLog.shared.info("PPT AX swap: window[\(i)] = '\(rawTitle as? String ?? "<no title>")'", category: "PPTSetup")
+        }
+
+        // Try every accessible window — Presenter View is whichever one is on the current Space.
+        for window in windows {
+            if let button = findAxSwapButton(in: window) {
+                var rawTitle: CFTypeRef?
+                var rawDesc:  CFTypeRef?
+                AXUIElementCopyAttributeValue(button, kAXTitleAttribute as CFString, &rawTitle)
+                AXUIElementCopyAttributeValue(button, kAXDescriptionAttribute as CFString, &rawDesc)
+                let result = AXUIElementPerformAction(button, kAXPressAction as CFString)
+                AppLog.shared.info(
+                    "PPT AX swap: pressed '\(rawTitle as? String ?? "")'/'\(rawDesc as? String ?? "")' → AXError=\(result.rawValue)",
+                    category: "PPTSetup"
+                )
+                return
+            }
+        }
+
+        // Button not found — log full AX button tree so we can identify the right label.
+        AppLog.shared.warn("PPT AX swap: swap button NOT found — dumping all buttons for investigation:", category: "PPTSetup")
+        for (i, window) in windows.enumerated() {
+            logAllAXButtons(in: window, windowIndex: i)
+        }
+    }
+
+    /// Recursively walks the AX element tree looking for a button whose title or
+    /// description suggests a display-swap / exchange action.
+    private func findAxSwapButton(in element: AXUIElement, depth: Int = 0) -> AXUIElement? {
+        guard depth < 25 else { return nil }
+
+        var rawRole: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &rawRole)
+        let role = rawRole as? String ?? ""
+
+        if role == (kAXButtonRole as String) || role == "AXToolbarButton" {
+            var t: CFTypeRef?
+            var d: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &t)
+            AXUIElementCopyAttributeValue(element, kAXDescriptionAttribute as CFString, &d)
+            let combined = ((t as? String ?? "") + " " + (d as? String ?? "")).lowercased()
+
+            if combined.contains("swap")
+               || combined.contains("exchange")
+               || (combined.contains("switch") && (combined.contains("display") || combined.contains("screen")))
+               || (combined.contains("change") && (combined.contains("display") || combined.contains("screen"))) {
+                return element
+            }
+        }
+
+        var rawChildren: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &rawChildren) == .success,
+              let children = rawChildren as? [AXUIElement] else { return nil }
+
+        for child in children {
+            if let found = findAxSwapButton(in: child, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+
+    /// Recursively logs every AX button found in the element tree (for debugging when
+    /// `findAxSwapButton` returns nil and we need to identify the real button label).
+    private func logAllAXButtons(in element: AXUIElement, windowIndex: Int, depth: Int = 0) {
+        guard depth < 8 else { return }
+
+        var rawRole: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &rawRole)
+        let role = rawRole as? String ?? ""
+
+        if role == (kAXButtonRole as String) || role == "AXToolbarButton" || role == "AXMenuButton" {
+            var t: CFTypeRef?
+            var d: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &t)
+            AXUIElementCopyAttributeValue(element, kAXDescriptionAttribute as CFString, &d)
+            AppLog.shared.info(
+                "PPT AX btn[win\(windowIndex),d\(depth)]: role=\(role) title='\(t as? String ?? "")' desc='\(d as? String ?? "")'",
+                category: "PPTSetup"
+            )
+        }
+
+        var rawChildren: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &rawChildren) == .success,
+           let children = rawChildren as? [AXUIElement] {
+            for child in children { logAllAXButtons(in: child, windowIndex: windowIndex, depth: depth + 1) }
+        }
     }
 
     private func stopSlideShowWatcher() {
