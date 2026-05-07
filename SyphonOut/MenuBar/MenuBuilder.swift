@@ -40,12 +40,11 @@ enum MenuBuilder {
         menu.addItem(vdMgrItem)
 
         let pptItem = NSMenuItem(
-            title: "PowerPoint Preset",
-            action: #selector(StatusBarController.togglePowerPointPreset(_:)),
+            title: "PowerPoint Setup…",
+            action: #selector(StatusBarController.openPowerPointSetup(_:)),
             keyEquivalent: ""
         )
         pptItem.target = delegate
-        pptItem.state  = PowerPointPreset.shared.isActive ? .on : .off
         menu.addItem(pptItem)
 
         let routingItem = NSMenuItem(

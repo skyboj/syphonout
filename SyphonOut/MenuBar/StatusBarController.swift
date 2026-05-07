@@ -190,8 +190,8 @@ extension StatusBarController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc func togglePowerPointPreset(_ sender: NSMenuItem) {
-        PowerPointPreset.shared.toggle()
+    @objc func openPowerPointSetup(_ sender: NSMenuItem) {
+        PowerPointSetupWindowController.shared.show()
     }
 
     @objc func openWindowRouting(_ sender: NSMenuItem) {
