@@ -396,8 +396,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
         let watcher = WindowInventory()
-        var swapAttempted = false   // clicked swap button once already
-        var ticksAfterSwap = 0      // how many 0.5s ticks we've waited after swap
+        // swapAttempted = true ONLY when the button was actually pressed (not on AX failure).
+        // This lets us retry on the next tick if PPT's windows weren't accessible yet.
+        var swapAttempted = false
+        // restartAttempted = true after we escalate to end-show + rerun.
+        var restartAttempted = false
+        var ticksAfterSwap = 0
 
         watcher.onUpdate = { [weak self] (windows: [WindowInfo]) in
             guard let self else { return }
@@ -414,10 +418,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             let windowMidX = slideShowWindow.frame.midX
             let windowMidY = primaryH - slideShowWindow.frame.midY   // Quartz→AppKit
 
+            // Re-resolve the target screen on every tick: display IDs can be
+            // reassigned when macOS settles after a mirror-set change.
             guard let targetScreen = NSScreen.screens.first(where: {
                 ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
             }) else {
-                AppLog.shared.warn("PPT watcher: target display \(targetDisplayID) NOT in NSScreen.screens — was it mirrored away?", category: "PPTSetup")
+                AppLog.shared.warn("PPT watcher: target \(targetDisplayID) not in NSScreen — mirrored/disconnected?", category: "PPTSetup")
                 self.setStatus("⚠ Presentation display not visible (mirrored?)")
                 self.stopSlideShowWatcher()
                 return
@@ -425,41 +431,141 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
             let alreadyOnTarget = targetScreen.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
             AppLog.shared.info(
-                "PPT watcher: slideShow mid=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) frame=\(targetScreen.frame) onTarget=\(alreadyOnTarget)",
+                "PPT watcher: mid=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) \(targetScreen.frame) onTarget=\(alreadyOnTarget)",
                 category: "PPTSetup"
             )
 
             if alreadyOnTarget {
-                AppLog.shared.info("PPT watcher: Slide Show is on \(targetScreen.localizedName) ✓", category: "PPTSetup")
+                AppLog.shared.info("PPT watcher: Slide Show ✓ on \(targetScreen.localizedName)", category: "PPTSetup")
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
                 self.stopSlideShowWatcher()
+                return
+            }
 
-            } else if !swapAttempted {
-                // First detection of wrong display — click "Swap Displays" in Presenter View.
-                swapAttempted = true
-                ticksAfterSwap = 0
-                let pid = pid_t(slideShowWindow.pid)
-                AppLog.shared.warn(
-                    "PPT watcher: Slide Show on WRONG display — clicking Swap Displays (pid=\(pid))",
-                    category: "PPTSetup"
-                )
-                self.setStatus("↩ Swapping displays…")
-                self.clickSwapDisplaysInPresenterView(pid: pid)
-                // Keep watcher running — next ticks will verify the swap took effect.
+            // ── Wrong display ──────────────────────────────────────────────
+            let pid = pid_t(slideShowWindow.pid)
 
-            } else {
-                // Swap was already attempted; still wrong — keep polling for a while.
+            if !swapAttempted {
+                // Step 1: try clicking "Swap Displays" in Presenter View.
+                // clickSwapDisplaysInPresenterView returns true only when the button
+                // was actually pressed — false means AX returned empty windows (PPT
+                // is still transitioning after a display-config change). In that case
+                // we leave swapAttempted=false so the next 0.5s tick retries.
+                let clicked = self.clickSwapDisplaysInPresenterView(pid: pid)
+                if clicked {
+                    swapAttempted = true
+                    ticksAfterSwap = 0
+                    AppLog.shared.info("PPT watcher: Swap Displays clicked — watching for confirmation", category: "PPTSetup")
+                    self.setStatus("↩ Swapping displays…")
+                }
+                // else: keep watcher running, retry next tick
+
+            } else if !restartAttempted {
                 ticksAfterSwap += 1
-                if ticksAfterSwap >= 20 {   // ~10 seconds
-                    AppLog.shared.warn("PPT watcher: swap attempted but Slide Show still on wrong display after 10s — giving up", category: "PPTSetup")
-                    self.setStatus("⚠ Could not move Slide Show — swap it manually in Presenter View")
+                // If the swap was pressed but 5 seconds later the slide show is
+                // STILL on MacBook (the mirror-slave bounce-back scenario), escalate
+                // to restarting the presentation so PPT re-detects the display layout.
+                let slideShowOnMacBook: Bool = {
+                    guard let mac = NSScreen.screens.first(where: { CGDisplayIsBuiltin(
+                        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? 0
+                    ) != 0 }) else { return false }
+                    return mac.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
+                }()
+
+                if ticksAfterSwap >= 10 && slideShowOnMacBook {
+                    // Swap didn't move it off MacBook — mirrors may have swallowed the
+                    // destination. Restart the presentation so PPT re-routes from scratch.
+                    restartAttempted = true
+                    AppLog.shared.warn("PPT watcher: swap had no effect (mirror bounce-back?) — restarting slide show", category: "PPTSetup")
+                    self.setStatus("↺ Restarting slide show for new display layout…")
+                    self.stopSlideShowWatcher()   // stop before restart to avoid races
+                    self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID)
+
+                } else if ticksAfterSwap >= 20 {
+                    AppLog.shared.warn("PPT watcher: giving up after 10s — Slide Show still not on target", category: "PPTSetup")
+                    self.setStatus("⚠ Could not route Slide Show — swap it manually in Presenter View")
                     self.stopSlideShowWatcher()
                 }
             }
         }
-        // Fast polling: catch PPT before it commits to fullscreen on wrong display.
         watcher.start(interval: 0.5)
         slideShowWatcher = watcher
+    }
+
+    // MARK: - Slide show restart
+
+    /// Exits the running PPT slide show (via AX fullscreen toggle + AppleScript)
+    /// and immediately restarts it.  After a mirror-config change, PPT may have
+    /// stale display assignments; restarting forces it to re-detect the new layout
+    /// (e.g. MacBook + D32x-D1 after M550SL was mirrored from MacBook).
+    private func restartSlideShow(pid: pid_t, targetDisplayID: CGDirectDisplayID) {
+        let app = AXUIElementCreateApplication(pid)
+
+        // Step 1: tell the Slide Show window to leave fullscreen so AppleScript
+        // "end show" won't hit the -32192 error it gets in proper fullscreen.
+        var rawWindows: CFTypeRef?
+        if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+           let windows = rawWindows as? [AXUIElement] {
+            for win in windows {
+                var rawTitle: CFTypeRef?
+                AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &rawTitle)
+                if (rawTitle as? String ?? "").localizedCaseInsensitiveContains("Slide Show") {
+                    AXUIElementSetAttributeValue(win, "AXFullScreen" as CFString, kCFBooleanFalse)
+                    AppLog.shared.info("PPT restart: cleared AXFullScreen on Slide Show window", category: "PPTSetup")
+                    break
+                }
+            }
+        }
+
+        // Step 2: give AX a moment to exit fullscreen, then end+restart via AppleScript.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self else { return }
+
+            let source = """
+            tell application "Microsoft PowerPoint"
+                try
+                    if (count of presentations) = 0 then return "no-presentation"
+                    set ap to active presentation
+                    set sss to slide show settings of ap
+                    try
+                        set ssw to slide show window of ap
+                        end show ssw
+                    on error
+                    end try
+                    delay 0.4
+                    run slide show sss
+                    return "restarted"
+                on error e
+                    return "restart-error:" & e
+                end try
+            end tell
+            """
+            AppLog.shared.info("PPT restart: running end-show + run-slide-show", category: "PPTSetup")
+            DispatchQueue.global(qos: .userInitiated).async {
+                var errDict: NSDictionary?
+                let result = NSAppleScript(source: source)?.executeAndReturnError(&errDict)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if let e = errDict {
+                        let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
+                        AppLog.shared.error("PPT restart AppleScript: \(msg)", category: "PPTSetup")
+                        self.setStatus("⚠ Restart failed — stop & restart the presentation manually")
+                    } else {
+                        let val = result?.stringValue ?? "ok"
+                        AppLog.shared.info("PPT restart result: \(val)", category: "PPTSetup")
+                        if val.contains("error") {
+                            self.setStatus("⚠ Restart error — stop & restart the presentation manually")
+                        } else {
+                            self.setStatus("↺ Presentation restarted — verifying display…")
+                            // Give PPT 2 s to open the slide show, then watch.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                                self?.startSlideShowWatcher(targetDisplayID: targetDisplayID)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - AX "Swap Displays" button click
@@ -468,14 +574,25 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     /// Accessibility API.  This is equivalent to the user clicking the swap button
     /// in the Presenter View toolbar — and works even when the Slide Show is in
     /// fullscreen on a different macOS Space.
-    private func clickSwapDisplaysInPresenterView(pid: pid_t) {
+    ///
+    /// Returns `true` if the button was found and the press action was sent.
+    /// Returns `false` if AX returned an empty window list (PPT may be transitioning
+    /// after a display-config change) — caller should retry on the next tick.
+    @discardableResult
+    private func clickSwapDisplaysInPresenterView(pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
 
         var rawWindows: CFTypeRef?
         let winErr = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
+
+        // If AX reports success but returns 0 windows, PPT is mid-transition (e.g.
+        // right after a mirror change); return false so the caller retries next tick.
         guard winErr == .success, let windows = rawWindows as? [AXUIElement], !windows.isEmpty else {
-            AppLog.shared.warn("PPT AX swap: no windows for pid=\(pid) err=\(winErr.rawValue)", category: "PPTSetup")
-            return
+            AppLog.shared.warn(
+                "PPT AX swap: no windows (err=\(winErr.rawValue)) — PPT likely transitioning, will retry",
+                category: "PPTSetup"
+            )
+            return false
         }
 
         // Log all windows so we can see what AX returns.
@@ -497,7 +614,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                     "PPT AX swap: pressed '\(rawTitle as? String ?? "")'/'\(rawDesc as? String ?? "")' → AXError=\(result.rawValue)",
                     category: "PPTSetup"
                 )
-                return
+                return true
             }
         }
 
@@ -506,6 +623,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         for (i, window) in windows.enumerated() {
             logAllAXButtons(in: window, windowIndex: i)
         }
+        return false
     }
 
     /// Recursively walks the AX element tree looking for a button whose title or
