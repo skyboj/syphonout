@@ -37,10 +37,11 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     /// All physically-connected display IDs (NSScreen AND online-but-mirrored).
     private var displayIDs:   [CGDirectDisplayID] = []
     private var roleCards:    [DisplayCard]        = []
-    private var roles:        [CGDirectDisplayID: Role] = [:]
-    /// Cache of display names — populated when a display is in NSScreen.screens
-    /// so we can show the right name even after it becomes a mirror slave.
-    private var displayNameCache: [CGDirectDisplayID: String] = [:]
+    /// Roles keyed by unit number (stable across mirror-set ID reassignments).
+    private var rolesByUnit:  [UInt32: Role] = [:]
+    /// Display names keyed by unit number — populated from NSScreen.localizedName
+    /// and surviving ID changes when macOS creates/removes mirror sets.
+    private var nameByUnit:   [UInt32: String] = [:]
 
     private var stackView:    NSStackView!
     private var statusLabel:  NSTextField!
@@ -153,18 +154,18 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     }
 
     private func refreshDisplays() {
-        // Prefer NSScreen ordering (stable, includes localizedName).
-        // Append any online-but-not-in-screens IDs (mirrored slaves) at the end.
-        var activeIDs: [CGDirectDisplayID] = NSScreen.screens.compactMap {
+        // Active displays (in NSScreen.screens) — update name cache by unit number.
+        let activeIDs: [CGDirectDisplayID] = NSScreen.screens.compactMap {
             $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         }
-        // Update name cache for all currently active screens
         for screen in NSScreen.screens {
             if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                displayNameCache[id] = screen.localizedName
+                nameByUnit[CGDisplayUnitNumber(id)] = screen.localizedName
             }
         }
         let activeSet = Set(activeIDs)
+
+        // Append online-but-not-active IDs (mirror slaves — new IDs, same hardware).
         let mirroredIDs = allOnlineDisplayIDs().filter { !activeSet.contains($0) }
         let allIDs = activeIDs + mirroredIDs
 
@@ -173,7 +174,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             rebuildCards(allIDs: allIDs)
         }
 
-        // Refresh snapshots (only active displays can be captured)
+        // Refresh snapshots only for active (non-mirrored) displays.
         for card in roleCards where activeSet.contains(card.displayID) {
             card.refreshSnapshot()
         }
@@ -183,22 +184,33 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         roleCards.removeAll()
 
-        for displayID in allIDs {
-            let role = roles[displayID] ?? defaultRole(for: displayID, in: allIDs)
-            roles[displayID] = role
+        let activeSet: Set<CGDirectDisplayID> = Set(NSScreen.screens.compactMap {
+            $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        })
 
-            let name    = displayNameCache[displayID] ?? "Display \(CGDisplayUnitNumber(displayID))"
-            let mirrored = !NSScreen.screens.contains {
-                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+        for displayID in allIDs {
+            let unit     = CGDisplayUnitNumber(displayID)
+            let isMirror = !activeSet.contains(displayID)
+
+            // Look up name by unit number — survives ID changes after mirroring.
+            let name = nameByUnit[unit] ?? "Display \(unit)"
+
+            // Look up (or default) role by unit number.
+            let role: Role
+            if let saved = rolesByUnit[unit] {
+                role = saved
+            } else {
+                role = defaultRole(for: displayID, in: allIDs)
+                rolesByUnit[unit] = role
             }
 
             let card = DisplayCard(
                 displayID:    displayID,
                 displayName:  name,
-                isMirrored:   mirrored,
+                isMirrored:   isMirror,
                 initialRole:  role
             ) { [weak self] newRole in
-                self?.roles[displayID] = newRole
+                self?.rolesByUnit[unit] = newRole
             }
             roleCards.append(card)
             stackView.addArrangedSubview(card)
@@ -237,13 +249,29 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         stopSlideShowWatcher()
         applyButton.isEnabled = false
 
-        let slideShowID      = roles.first { $0.value == .slideShow }?.key
-        let speakerMirrorIDs = roles.filter { $0.value == .speakerMirror }.map { $0.key }
+        // Build ID→role map from unit-based roles (for all currently known IDs).
+        let slideShowID      = displayIDs.first { rolesByUnit[CGDisplayUnitNumber($0)] == .slideShow }
+        let speakerMirrorIDs = displayIDs.filter  { rolesByUnit[CGDisplayUnitNumber($0)] == .speakerMirror }
         let builtinID        = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
 
         var messages: [String] = []
 
-        // ── 1. System-level mirror ────────────────────────────────────────
+        // ── 1a. Remove mirrors for displays no longer assigned Speaker Notes ──
+        // If a display is currently in an OS mirror set but the user changed its
+        // role, remove the mirror so it can act independently again.
+        for displayID in displayIDs {
+            let unit = CGDisplayUnitNumber(displayID)
+            let role = rolesByUnit[unit] ?? .notUsed
+            // CGDisplayMirrorsDisplay returns the display this one mirrors, or 0.
+            if CGDisplayMirrorsDisplay(displayID) != kCGNullDirectDisplay && role != .speakerMirror {
+                let name = nameByUnit[unit] ?? "\(displayID)"
+                AppLog.shared.info("PPT Setup: removing mirror on \(name) (role changed to \(role.label))", category: "PPTSetup")
+                removeSystemMirror(for: displayID)
+                messages.append("Unmirror: \(name)")
+            }
+        }
+
+        // ── 1b. Apply mirrors for Speaker Notes displays ──────────────────
         let mirrorMasterID: CGDirectDisplayID? = builtinID ?? speakerMirrorIDs.first
         let displaysToMirror = speakerMirrorIDs.filter { $0 != mirrorMasterID }
 
@@ -253,8 +281,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             for mirrorID in displaysToMirror {
                 guard let masterID = mirrorMasterID else { continue }
                 applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
-                let mirrorName = displayNameCache[mirrorID] ?? "\(mirrorID)"
-                let masterName = displayNameCache[masterID] ?? "\(masterID)"
+                let mirrorName = nameByUnit[CGDisplayUnitNumber(mirrorID)] ?? "\(mirrorID)"
+                let masterName = nameByUnit[CGDisplayUnitNumber(masterID)] ?? "\(masterID)"
                 AppLog.shared.info("PPT Setup: system mirror \(mirrorName) ← \(masterName)", category: "PPTSetup")
                 messages.append("Mirror: \(mirrorName) ← \(masterName)")
             }
@@ -448,7 +476,8 @@ final class DisplayCard: NSView {
             rolePicker.lastItem?.tag = role.rawValue
         }
         rolePicker.selectItem(withTag: initialRole.rawValue)
-        rolePicker.isEnabled = !isMirrored   // mirrored display is shown but not reassignable
+        // Mirrored displays are still assignable — changing role and clicking
+        // Apply will remove the mirror and apply the new configuration.
 
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false

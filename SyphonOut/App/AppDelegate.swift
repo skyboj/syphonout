@@ -157,20 +157,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // ── Removed displays ──────────────────────────────────────────────
+        // When macOS creates an OS mirror set it reassigns CGDirectDisplayIDs —
+        // the old slave ID disappears and a fresh ID appears for the hardware.
+        // CGDisplayIsOnline(oldID) therefore returns 0 even though the monitor
+        // is still physically connected. We detect "still connected" by comparing
+        // unit numbers (CGDisplayUnitNumber), which are stable across ID changes.
+        let onlineUnitNumbers: Set<UInt32> = {
+            var count: UInt32 = 0
+            CGGetOnlineDisplayList(0, nil, &count)
+            var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+            CGGetOnlineDisplayList(count, &ids, &count)
+            return Set(ids.prefix(Int(count)).map { CGDisplayUnitNumber($0) })
+        }()
+
         let removedIds = currentIds.subtracting(liveIds)
         for id in removedIds {
-            // CGDisplayIsOnline returns non-zero when the display is physically
-            // connected but OS-mirrored (disappears from NSScreen.screens while
-            // still present as hardware). Don't remove it — the menu should keep
-            // showing it so the user can see and change its state.
-            if CGDisplayIsOnline(id) != 0 {
-                logger.info("Display \(id) left NSScreen.screens but is still online (mirrored) — keeping controller")
+            let unit = CGDisplayUnitNumber(id)
+            if onlineUnitNumbers.contains(unit) {
+                // Same physical hardware, just remapped to a new ID (mirroring).
+                // Keep the OutputWindowController so the menu still shows it.
+                logger.info("Display \(id) (unit \(unit)) left NSScreen but hardware still online (mirrored) — keeping controller")
                 continue
             }
-            // Display is truly offline (cable unplugged).  Clean up.
+            // Unit number gone → cable unplugged. Clean up completely.
             VirtualDisplayManager.shared.unassignPhysical(displayId: id)
             outputs.removeAll { $0.displayId == id }
-            logger.info("Display \(id) disconnected — output removed")
+            logger.info("Display \(id) (unit \(unit)) disconnected — output removed")
         }
 
         // ── Added displays ────────────────────────────────────────────────
