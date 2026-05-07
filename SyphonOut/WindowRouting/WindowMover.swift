@@ -78,7 +78,22 @@ enum WindowMover {
             // Focused window comes from the correct PID — use it without matching.
             axWindow = windowList[0]
         } else {
-            guard let found = findAXWindow(in: windowList, matching: window) else {
+            // First attempt: match within the kAXWindowsAttribute list.
+            var candidate = findAXWindow(in: windowList, matching: window)
+
+            // Second attempt: if we couldn't find it (or found a wrong-type window),
+            // try "AXAllWindows" which includes windows on separate fullscreen Spaces
+            // (e.g. the Slide Show window when PPT is presenting on another Space).
+            if candidate == nil {
+                var rawAll: CFTypeRef?
+                if AXUIElementCopyAttributeValue(app, "AXAllWindows" as CFString, &rawAll) == .success,
+                   let allList = rawAll as? [AXUIElement], allList.count > windowList.count {
+                    AppLog.shared.info("move: trying AXAllWindows (\(allList.count) windows vs \(windowList.count) from kAXWindowsAttribute)", category: "WindowMover")
+                    candidate = findAXWindow(in: allList, matching: window)
+                }
+            }
+
+            guard let found = candidate else {
                 AppLog.shared.error("move: windowNotFound (could not match AXUIElement to '\(window.title)')", category: "WindowMover")
                 return .windowNotFound
             }
@@ -328,12 +343,31 @@ enum WindowMover {
 
         // ── Pass 4: single-candidate last resort ──────────────────────────────
         // If the list has exactly one window and we exhausted all matching strategies,
-        // log the mismatch and return it anyway — it must be the window we want.
+        // use it as a last resort — UNLESS the title indicates a clearly different
+        // window type (e.g. "Presenter View" when we want "Slide Show"). In that case
+        // AXAllWindows will be tried in the caller.
         if windows.count == 1 {
             var rawTitle: CFTypeRef?
             let axTitle = AXUIElementCopyAttributeValue(windows[0], kAXTitleAttribute as CFString, &rawTitle) == .success
-                ? (rawTitle as? String ?? "<no title>")
-                : "<unreadable>"
+                ? (rawTitle as? String ?? "")
+                : ""
+
+            // Reject if the target is a Slide Show window but the candidate is Presenter View,
+            // or vice versa — these are completely different windows that happen to share a PID.
+            let targetIsSlideShow   = info.title.localizedCaseInsensitiveContains("Slide Show")
+            let targetIsPresenterV  = info.title.localizedCaseInsensitiveContains("Presenter View")
+            let candidateIsSlideShow  = axTitle.localizedCaseInsensitiveContains("Slide Show")
+            let candidateIsPresenterV = axTitle.localizedCaseInsensitiveContains("Presenter View")
+            let windowTypeConflict = (targetIsSlideShow && candidateIsPresenterV)
+                                  || (targetIsPresenterV && candidateIsSlideShow)
+            if windowTypeConflict {
+                AppLog.shared.warn(
+                    "findAXWindow: single candidate rejected — type mismatch (AX='\(axTitle)' vs SC='\(info.title)'). Will try AXAllWindows.",
+                    category: "WindowMover"
+                )
+                return nil
+            }
+
             AppLog.shared.warn(
                 "findAXWindow: single candidate, using it despite title mismatch (AX='\(axTitle)' vs SC='\(info.title)')",
                 category: "WindowMover"
