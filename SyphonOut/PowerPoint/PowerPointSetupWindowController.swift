@@ -216,23 +216,37 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     @objc private func applySetup() {
         stopSlideShowWatcher()
 
-        let slideShowID     = roles.first { $0.value == .slideShow }?.key
-        let speakerMirrorID = roles.first { $0.value == .speakerMirror }?.key
-        let builtinID       = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
+        let slideShowID      = roles.first { $0.value == .slideShow }?.key
+        // All displays assigned "Speaker Notes (Mirror)" role
+        let speakerMirrorIDs = roles.filter { $0.value == .speakerMirror }.map { $0.key }
+        let builtinID        = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
 
         var messages: [String] = []
 
-        // ── 1. System-level mirror for the speaker notes display ──────────
-        if let mirrorID = speakerMirrorID, mirrorID != builtinID {
-            let masterID = builtinID ?? (displayIDs.first { $0 != mirrorID } ?? mirrorID)
-            applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
-            let mirrorName = roleCards.first { $0.displayID == mirrorID }?.displayName ?? "\(mirrorID)"
-            let masterName = roleCards.first { $0.displayID == masterID }?.displayName ?? "\(masterID)"
-            AppLog.shared.info("PPT Setup: system mirror \(mirrorName) → \(masterName)", category: "PPTSetup")
-            messages.append("Mirror: \(mirrorName) ← \(masterName)")
-        } else if let mirrorID = speakerMirrorID, mirrorID == builtinID {
-            // Built-in selected as speaker notes — nothing to mirror.
+        // ── 1. System-level mirror for the speaker notes displays ─────────
+        //
+        // The built-in MacBook display is always the MASTER — it shows
+        // speaker notes natively. Every other display tagged "Speaker Notes
+        // (Mirror)" is configured to OS-mirror the built-in so it shows the
+        // same content. If there is no built-in, use the first tagged display
+        // as the master and mirror the rest.
+        let mirrorMasterID: CGDirectDisplayID? = builtinID
+            ?? speakerMirrorIDs.first
+
+        let displaysToMirror = speakerMirrorIDs.filter { $0 != mirrorMasterID }
+
+        if displaysToMirror.isEmpty && speakerMirrorIDs.contains(where: { $0 == builtinID }) {
+            // Only the built-in is tagged — nothing external to mirror.
             messages.append("Speaker: MacBook (no mirror needed)")
+        } else {
+            for mirrorID in displaysToMirror {
+                guard let masterID = mirrorMasterID else { continue }
+                applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
+                let mirrorName = roleCards.first { $0.displayID == mirrorID }?.displayName ?? "\(mirrorID)"
+                let masterName = roleCards.first { $0.displayID == masterID }?.displayName ?? "\(masterID)"
+                AppLog.shared.info("PPT Setup: system mirror \(mirrorName) ← \(masterName)", category: "PPTSetup")
+                messages.append("Mirror: \(mirrorName) ← \(masterName)")
+            }
         }
 
         // ── 2. Move PowerPoint Slide Show window ──────────────────────────
