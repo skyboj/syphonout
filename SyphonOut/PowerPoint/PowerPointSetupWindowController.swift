@@ -438,13 +438,14 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         let monitorNumber = idx + 1   // PPT uses 1-based monitor index
         let screenName = screens[idx].localizedName
 
-        // Note: "slide show monitor" is the AppleScript property name (with spaces).
-        // The value 0 = auto/primary; 1..N = specific monitor.
+        // Use a "tell" block — compound property names like "slide show monitor"
+        // must be accessed via tell, not via "of" chaining (causes parse error).
         let source = """
         tell application "Microsoft PowerPoint"
             if (count of presentations) > 0 then
-                set sss to slide show settings of active presentation
-                set slide show monitor of sss to \(monitorNumber)
+                tell slide show settings of active presentation
+                    set slide show monitor to \(monitorNumber)
+                end tell
                 return "ok: monitor=\(monitorNumber)"
             else
                 return "no presentation open"

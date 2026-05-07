@@ -220,58 +220,69 @@ enum WindowMover {
 
     // MARK: - AXUIElement matching
 
-    /// Finds the AXUIElement window that best matches `info` by comparing
-    /// position and size (within a tolerance) and optionally title.
+    /// Finds the AXUIElement window that best matches `info`.
     ///
-    /// SCWindow.frame is in Quartz coordinates; AX position is also Quartz.
+    /// Pass 1 — frame match: position + size within tolerance (4 px).
+    ///   Reliable for normal windows whose CGWindowList frame == AX frame.
+    ///
+    /// Pass 2 — title fallback: for fullscreen windows, macOS reports AX
+    ///   position as (0,0) on the primary display even when the window is on
+    ///   a secondary display, so the frame match fails. If `info.title` is
+    ///   non-empty we look for the first AX window with a matching title.
     private static func findAXWindow(in windows: [AXUIElement],
                                      matching info: WindowInfo) -> AXUIElement? {
 
-        let tolerance: CGFloat = 4   // pixels; handles sub-pixel rounding
+        let tolerance: CGFloat = 4
 
+        // ── Pass 1: frame-based match ─────────────────────────────────────
         for axWin in windows {
-            // Read AX position
             var rawPos: CFTypeRef?
             guard AXUIElementCopyAttributeValue(axWin, kAXPositionAttribute as CFString, &rawPos) == .success,
-                  let posVal = rawPos
-            else { continue }
-
+                  let posVal = rawPos else { continue }
             var axPos = CGPoint.zero
             guard AXValueGetValue(posVal as! AXValue, .cgPoint, &axPos) else { continue }
 
-            // Read AX size
             var rawSize: CFTypeRef?
             guard AXUIElementCopyAttributeValue(axWin, kAXSizeAttribute as CFString, &rawSize) == .success,
-                  let sizeVal = rawSize
-            else { continue }
-
+                  let sizeVal = rawSize else { continue }
             var axSize = CGSize.zero
             guard AXValueGetValue(sizeVal as! AXValue, .cgSize, &axSize) else { continue }
 
-            // info.frame is already in Quartz coords (from SCWindow.frame)
-            let framePos  = CGPoint(x: info.frame.minX, y: info.frame.minY)
-            let frameSize = info.frame.size
+            let posMatch  = abs(axPos.x - info.frame.minX) < tolerance &&
+                            abs(axPos.y - info.frame.minY) < tolerance
+            let sizeMatch = abs(axSize.width  - info.frame.width)  < tolerance &&
+                            abs(axSize.height - info.frame.height) < tolerance
 
-            let posMatch  = abs(axPos.x - framePos.x)  < tolerance &&
-                            abs(axPos.y - framePos.y)  < tolerance
-            let sizeMatch = abs(axSize.width  - frameSize.width)  < tolerance &&
-                            abs(axSize.height - frameSize.height) < tolerance
+            guard posMatch && sizeMatch else { continue }
 
-            if posMatch && sizeMatch {
-                // Optionally verify title for extra confidence (some apps have
-                // windows at identical positions, e.g. inspector panels)
-                if !info.title.isEmpty {
-                    var rawTitle: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &rawTitle) == .success,
-                       let axTitle = rawTitle as? String,
-                       !axTitle.isEmpty,
-                       axTitle != info.title {
-                        continue   // title mismatch — keep searching
-                    }
+            // Extra title check
+            if !info.title.isEmpty {
+                var rawTitle: CFTypeRef?
+                if AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &rawTitle) == .success,
+                   let axTitle = rawTitle as? String,
+                   !axTitle.isEmpty,
+                   axTitle != info.title {
+                    continue
                 }
-                return axWin
             }
+            return axWin
         }
+
+        // ── Pass 2: title-only fallback (handles fullscreen / wrong AX origin) ──
+        guard !info.title.isEmpty else { return nil }
+        for axWin in windows {
+            var rawTitle: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &rawTitle) == .success,
+                  let axTitle = rawTitle as? String,
+                  axTitle == info.title
+            else { continue }
+            AppLog.shared.info(
+                "findAXWindow: frame match failed, found '\(info.title)' via title fallback",
+                category: "WindowMover"
+            )
+            return axWin
+        }
+
         return nil
     }
 
