@@ -16,7 +16,7 @@ final class OutputWindowController {
     private var displayLink: CVDisplayLink?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "OutputWindow")
 
-    private var currentMode: SyphonOutMode = SYPHON_OUT_MODE_SIGNAL
+    private(set) var currentMode: SyphonOutMode = SYPHON_OUT_MODE_SIGNAL
 
     /// Human-readable name for `displayId` using the screen's localizedName as the default.
     static func screenName(for displayId: CGDirectDisplayID) -> String {

@@ -17,6 +17,7 @@
 		B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */; };
 		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
 		2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */; };
+		F2E1D0C9B8A7F6E5D4C3B2A1 /* VirtualDisplayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */; };
 		3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */; };
 		AA99BB11CC22DD33EE44FF55 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */; };
 		45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8942F1931F1F24B069C953E1 /* PreferencesStore.swift */; };
@@ -54,6 +55,7 @@
 		6D2E17D479C268B8723504C7 /* SOLinkClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SOLinkClient.m; sourceTree = "<group>"; };
 		769488A7B31024CC7CFA777C /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayManager.swift; sourceTree = "<group>"; };
+		E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayWindowController.swift; sourceTree = "<group>"; };
 		8942F1931F1F24B069C953E1 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
 		8C830C8152F596247813832C /* SyphonNative.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SyphonNative.m; sourceTree = "<group>"; };
 		9CBFFBB4A7DFAE14129F77C7 /* PreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRenderer.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 			children = (
 				9CBFFBB4A7DFAE14129F77C7 /* PreviewRenderer.swift */,
 				7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */,
+				E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */,
 			);
 			path = VirtualDisplay;
 			sourceTree = "<group>";
@@ -345,6 +348,7 @@ EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 				62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */,
 				118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */,
 				2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */,
+				F2E1D0C9B8A7F6E5D4C3B2A1 /* VirtualDisplayWindowController.swift in Sources */,
 				CD22C5176CFE384DD5119A7E /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

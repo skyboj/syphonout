@@ -158,6 +158,16 @@ final class VirtualDisplayManager: ObservableObject {
         NotificationCenter.default.post(name: .vdListChanged, object: nil)
     }
 
+    func renameDisplay(id: String, name: String) {
+        guard let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        let oldName = displays[index].name
+        displays[index].name = name
+        // VD name is Swift-side only; Rust uses the UUID, not the display name.
+        save()
+        AppLog.shared.info("renameDisplay '\(oldName)' → '\(name)'", category: "VDManager")
+        NotificationCenter.default.post(name: .vdListChanged, object: nil)
+    }
+
     private func createDefaultDisplay() {
         // Create the default VD but do NOT assign it to any physical output.
         // The user selects which physical display gets the signal via the menu.

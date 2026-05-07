@@ -1,5 +1,4 @@
 import AppKit
-import os.log
 
 /// Owns the NSStatusItem and drives the dynamic menu.
 /// All mode/server changes are dispatched to Rust via the FFI.
@@ -8,7 +7,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     var outputs: [OutputWindowController]
     private var serversChangedObserver: NSObjectProtocol?
-    private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "StatusBar")
 
     init(outputs: [OutputWindowController]) {
         self.outputs = outputs
@@ -121,78 +119,47 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
 extension StatusBarController {
 
-    @objc func setModeSignal(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_SIGNAL)
-    }
-    @objc func setModeFreeze(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_FREEZE)
-    }
-    @objc func setModeBlackBlank(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_BLANK_BLACK)
-    }
-    @objc func setModeWhiteBlank(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_BLANK_WHITE)
-    }
-    @objc func setModeTestPattern(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_BLANK_TEST_PATTERN)
-    }
-    @objc func setModeOff(_ sender: NSMenuItem) {
-        (sender.representedObject as? OutputWindowController)?.setMode(SYPHON_OUT_MODE_OFF)
-    }
+    // MARK: Physical output: source (routes through assigned VD)
 
-    @objc func selectSource(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let output = info["output"] as? OutputWindowController,
-              let uuid   = info["uuid"]   as? String
+    /// Sets the Syphon source on the VD assigned to the given physical display.
+    @objc func setPhysicalSource(_ sender: NSMenuItem) {
+        guard let info      = sender.representedObject as? [String: Any],
+              let displayId = info["displayId"] as? CGDirectDisplayID,
+              let uuid      = info["uuid"]      as? String
         else { return }
-        output.setServer(uuid: uuid)
-    }
-
-    // MARK: - Virtual Display actions
-
-    @objc func createNewVD(_ sender: NSMenuItem) {
-        VirtualDisplayManager.shared.createDisplay()
-    }
-
-    @objc func deleteVD(_ sender: NSMenuItem) {
-        guard let vdId = sender.representedObject as? String else { return }
-        VirtualDisplayManager.shared.destroyDisplay(id: vdId)
-    }
-
-    @objc func setVDMode(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let vdId = info["vdId"] as? String,
-              let modeRaw = info["mode"] as? UInt32
-        else { return }
-        let mode = SyphonOutMode(rawValue: modeRaw)
-        VirtualDisplayManager.shared.setMode(vdId: vdId, mode: mode)
-    }
-
-    @objc func selectVDSource(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let vdId = info["vdId"] as? String,
-              let uuid = info["uuid"] as? String
-        else { return }
+        let vdm = VirtualDisplayManager.shared
+        guard let vd = vdm.assignedVD(for: displayId) else { return }
         if uuid.isEmpty {
-            VirtualDisplayManager.shared.clearSource(vdId: vdId)
+            vdm.clearSource(vdId: vd.id)
         } else {
-            VirtualDisplayManager.shared.setSource(vdId: vdId, sourceUUID: uuid)
+            vdm.setSource(vdId: vd.id, sourceUUID: uuid)
         }
     }
 
-    @objc func setVDSize(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let vdId = info["vdId"] as? String,
-              let width = info["width"] as? UInt32,
-              let height = info["height"] as? UInt32
+    // MARK: Physical output: mode (routes through assigned VD, falls back to direct)
+
+    /// Sets the mode on the VD assigned to the given physical display.
+    /// Falls back to the OutputWindowController if no VD is assigned.
+    @objc func setPhysicalMode(_ sender: NSMenuItem) {
+        guard let info      = sender.representedObject as? [String: Any],
+              let displayId = info["displayId"] as? CGDirectDisplayID,
+              let modeRaw   = info["mode"]      as? UInt32
         else { return }
-        VirtualDisplayManager.shared.setSize(vdId: vdId, width: width, height: height)
+        let mode = SyphonOutMode(rawValue: modeRaw)
+        let vdm  = VirtualDisplayManager.shared
+        if let vd = vdm.assignedVD(for: displayId) {
+            vdm.setMode(vdId: vd.id, mode: mode)
+        } else if let output = outputs.first(where: { $0.displayId == displayId }) {
+            output.setMode(mode)
+        }
     }
 
+    // MARK: Physical output: VD assignment (used when unassigned)
+
     @objc func assignPhysical(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
+        guard let info      = sender.representedObject as? [String: Any],
               let displayId = info["displayId"] as? CGDirectDisplayID,
-              let vdId = info["vdId"] as? String
+              let vdId      = info["vdId"]      as? String
         else { return }
         if vdId.isEmpty {
             VirtualDisplayManager.shared.unassignPhysical(displayId: displayId)
@@ -201,8 +168,10 @@ extension StatusBarController {
         }
     }
 
+    // MARK: Physical output: scale
+
     @objc func setScaleMode(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
+        guard let info      = sender.representedObject as? [String: Any],
               let displayId = info["displayId"] as? CGDirectDisplayID,
               let rawMode   = info["mode"]      as? UInt32
         else { return }
@@ -212,24 +181,17 @@ extension StatusBarController {
         }
     }
 
-    @objc func stopAllOutputs(_ sender: NSMenuItem) {
-        VirtualDisplayManager.shared.setAllModes(SYPHON_OUT_MODE_BLANK_BLACK)
+    // MARK: Utilities
+
+    @objc func openVirtualDisplays(_ sender: NSMenuItem) {
+        let wc = VirtualDisplayWindowController.shared
+        wc.window?.makeKeyAndOrderFront(sender)
+        wc.subscribeIfNeeded()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func togglePowerPointPreset(_ sender: NSMenuItem) {
         PowerPointPreset.shared.toggle()
-    }
-
-    @objc func toggleMirror(_ sender: NSMenuItem) {
-        // Mirror: route all displays from the first output's server
-        // Simple toggle: use the first output as primary source
-        let mirrorEnabled = sender.state != .on
-        if mirrorEnabled, let primaryId = outputs.first?.displayId {
-            syphonout_set_mirror(true, primaryId)
-        } else {
-            syphonout_set_mirror(false, 0)
-        }
-        sender.state = mirrorEnabled ? .on : .off
     }
 
     @objc func openWindowRouting(_ sender: NSMenuItem) {

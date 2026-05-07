@@ -1,15 +1,53 @@
 import AppKit
 
 /// Builds the NSMenu content dynamically each time the menu opens.
+///
+/// New structure (physical outputs first):
+///
+///   [Display Name]  ● Live
+///     Source: OBS: Program ▶
+///     Mode: Signal ▶
+///     Scale: Fill ▶
+///   ──────────────────────
+///   Virtual Displays…
+///   PowerPoint Preset  ◻
+///   Window Routing…
+///   Show Log…   ⇧⌘L
+///   ──────────────────────
+///   Preferences…  ⌘,
+///   Quit          ⌘Q
+///
 enum MenuBuilder {
 
     static func build(menu: NSMenu, outputs: [OutputWindowController], delegate: StatusBarController) {
-        let header = NSMenuItem(title: "SyphonOut", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(.separator())
+        let vdManager = VirtualDisplayManager.shared
+        let servers   = availableServers()
 
-        // ── Window Routing — top of menu for quick access ──────────────────
+        // ── Physical Outputs (top-level — the main daily task) ─────────────
+        for output in outputs {
+            addPhysicalSection(to: menu, output: output, vdManager: vdManager,
+                               servers: servers, delegate: delegate)
+            menu.addItem(.separator())
+        }
+
+        // ── Utilities ──────────────────────────────────────────────────────
+        let vdMgrItem = NSMenuItem(
+            title: "Virtual Displays…",
+            action: #selector(StatusBarController.openVirtualDisplays(_:)),
+            keyEquivalent: ""
+        )
+        vdMgrItem.target = delegate
+        menu.addItem(vdMgrItem)
+
+        let pptItem = NSMenuItem(
+            title: "PowerPoint Preset",
+            action: #selector(StatusBarController.togglePowerPointPreset(_:)),
+            keyEquivalent: ""
+        )
+        pptItem.target = delegate
+        pptItem.state  = PowerPointPreset.shared.isActive ? .on : .off
+        menu.addItem(pptItem)
+
         let routingItem = NSMenuItem(
             title: "Window Routing…",
             action: #selector(StatusBarController.openWindowRouting(_:)),
@@ -17,14 +55,6 @@ enum MenuBuilder {
         )
         routingItem.target = delegate
         menu.addItem(routingItem)
-
-        let stopAllItem = NSMenuItem(
-            title: "Stop All Outputs",
-            action: #selector(StatusBarController.stopAllOutputs(_:)),
-            keyEquivalent: ""
-        )
-        stopAllItem.target = delegate
-        menu.addItem(stopAllItem)
 
         let logItem = NSMenuItem(
             title: "Show Log…",
@@ -35,53 +65,6 @@ enum MenuBuilder {
         logItem.target = delegate
         menu.addItem(logItem)
 
-        // ── Presets ────────────────────────────────────────────────────────
-        let pptItem = NSMenuItem(
-            title: "PowerPoint Preset",
-            action: #selector(StatusBarController.togglePowerPointPreset(_:)),
-            keyEquivalent: ""
-        )
-        pptItem.target = delegate
-        pptItem.state  = PowerPointPreset.shared.isActive ? .on : .off
-        menu.addItem(pptItem)
-
-        menu.addItem(.separator())
-
-        // ── Virtual Displays ───────────────────────────────────────────────
-        let vdHeader = NSMenuItem(title: "Virtual Displays", action: nil, keyEquivalent: "")
-        vdHeader.isEnabled = false
-        menu.addItem(vdHeader)
-
-        let vdManager = VirtualDisplayManager.shared
-        let servers = availableServers()
-
-        if vdManager.displays.isEmpty {
-            let empty = NSMenuItem(title: "  No virtual displays", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-        } else {
-            for vd in vdManager.displays {
-                addVDSection(to: menu, vd: vd, servers: servers, delegate: delegate)
-            }
-        }
-
-        let newVDItem = NSMenuItem(
-            title: "  + New Virtual Display…",
-            action: #selector(StatusBarController.createNewVD(_:)),
-            keyEquivalent: ""
-        )
-        newVDItem.target = delegate
-        menu.addItem(newVDItem)
-        menu.addItem(.separator())
-
-        // ── Physical Outputs ───────────────────────────────────────────────
-        let physHeader = NSMenuItem(title: "Physical Outputs", action: nil, keyEquivalent: "")
-        physHeader.isEnabled = false
-        menu.addItem(physHeader)
-
-        for output in outputs {
-            addPhysicalSection(to: menu, output: output, vdManager: vdManager, delegate: delegate)
-        }
         menu.addItem(.separator())
 
         // ── App actions ────────────────────────────────────────────────────
@@ -102,192 +85,132 @@ enum MenuBuilder {
         menu.addItem(quitItem)
     }
 
-    // MARK: - Virtual Display section
-
-    private static func addVDSection(
-        to menu: NSMenu,
-        vd: VirtualDisplay,
-        servers: [(uuid: String, name: String, appName: String)],
-        delegate: StatusBarController
-    ) {
-        // Preview thumbnail (shown above the VD name if a frame is available)
-        if let thumbnail = PreviewRenderer.thumbnail(for: vd) {
-            let previewItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            previewItem.isEnabled = false
-            previewItem.image = thumbnail
-            // Indent so the thumbnail aligns with the other indented items
-            previewItem.indentationLevel = 1
-            menu.addItem(previewItem)
-        }
-
-        // Name header with mode indicator
-        let nameItem = NSMenuItem(
-            title: "  \(vd.name) — \(vd.modeDescription)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        nameItem.isEnabled = false
-        menu.addItem(nameItem)
-
-        // Mode submenu
-        let modeMenu = NSMenu()
-        for (title, mode) in [
-            ("Signal", SYPHON_OUT_MODE_SIGNAL),
-            ("Freeze", SYPHON_OUT_MODE_FREEZE),
-            ("Blank Black", SYPHON_OUT_MODE_BLANK_BLACK),
-            ("Blank White", SYPHON_OUT_MODE_BLANK_WHITE),
-            ("Test Pattern", SYPHON_OUT_MODE_BLANK_TEST_PATTERN),
-            ("Off", SYPHON_OUT_MODE_OFF),
-        ] {
-            let item = NSMenuItem(
-                title: title,
-                action: #selector(StatusBarController.setVDMode(_:)),
-                keyEquivalent: ""
-            )
-            item.representedObject = ["vdId": vd.id, "mode": mode.rawValue] as [String: Any]
-            item.target = delegate
-            item.state = (vd.mode == mode) ? .on : .off
-            modeMenu.addItem(item)
-        }
-        let modeItem = NSMenuItem(title: "    Mode", action: nil, keyEquivalent: "")
-        modeItem.submenu = modeMenu
-        menu.addItem(modeItem)
-
-        // Source submenu
-        let sourceMenu = NSMenu()
-        let noneItem = NSMenuItem(
-            title: "None",
-            action: #selector(StatusBarController.selectVDSource(_:)),
-            keyEquivalent: ""
-        )
-        noneItem.representedObject = ["vdId": vd.id, "uuid": ""] as [String: Any]
-        noneItem.target = delegate
-        noneItem.state = (vd.sourceUUID == nil) ? .on : .off
-        sourceMenu.addItem(noneItem)
-        sourceMenu.addItem(.separator())
-
-        for server in servers {
-            // Show "AppName: StreamName" only when appName adds real info,
-            // e.g. multiple apps sharing similar stream names.
-            let displayName = server.appName.isEmpty || server.appName == server.name
-                ? server.name
-                : "\(server.appName): \(server.name)"
-            let item = NSMenuItem(
-                title: displayName,
-                action: #selector(StatusBarController.selectVDSource(_:)),
-                keyEquivalent: ""
-            )
-            item.representedObject = ["vdId": vd.id, "uuid": server.uuid] as [String: Any]
-            item.target = delegate
-            item.state = (vd.sourceUUID == server.uuid) ? .on : .off
-            sourceMenu.addItem(item)
-        }
-
-        let selectedName: String = {
-            guard let uuid = vd.sourceUUID else { return "None" }
-            if let server = servers.first(where: { $0.uuid == uuid }) {
-                return server.name
-            }
-            // Server offline — show a clean label instead of the raw UUID
-            if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
-            return "Syphon (offline)"
-        }()
-        let sourceItem = NSMenuItem(title: "    Source: \(selectedName)", action: nil, keyEquivalent: "")
-        sourceItem.submenu = sourceMenu
-        menu.addItem(sourceItem)
-
-        // Resolution picker (common sizes)
-        let resMenu = NSMenu()
-        let sizes = [
-            ("1280×720", 1280, 720),
-            ("1920×1080", 1920, 1080),
-            ("2560×1440", 2560, 1440),
-            ("3840×2160", 3840, 2160),
-        ]
-        for (label, w, h) in sizes {
-            let item = NSMenuItem(
-                title: label,
-                action: #selector(StatusBarController.setVDSize(_:)),
-                keyEquivalent: ""
-            )
-            item.representedObject = ["vdId": vd.id, "width": w, "height": h] as [String: Any]
-            item.target = delegate
-            item.state = (vd.width == UInt32(w) && vd.height == UInt32(h)) ? .on : .off
-            resMenu.addItem(item)
-        }
-        let resItem = NSMenuItem(title: "    Resolution: \(vd.width)×\(vd.height)", action: nil, keyEquivalent: "")
-        resItem.submenu = resMenu
-        menu.addItem(resItem)
-
-        // Delete
-        let deleteItem = NSMenuItem(
-            title: "    Delete",
-            action: #selector(StatusBarController.deleteVD(_:)),
-            keyEquivalent: ""
-        )
-        deleteItem.representedObject = vd.id
-        deleteItem.target = delegate
-        menu.addItem(deleteItem)
-
-        // Signal status
-        let signal = vd.sourceUUID != nil
-            ? (servers.contains(where: { $0.uuid == vd.sourceUUID }) ? "● Live" : "⚠ No Signal")
-            : "○ No Source"
-        let statusItem = NSMenuItem(title: "    \(signal)", action: nil, keyEquivalent: "")
-        statusItem.isEnabled = false
-        menu.addItem(statusItem)
-    }
-
     // MARK: - Physical Output section
 
     private static func addPhysicalSection(
         to menu: NSMenu,
         output: OutputWindowController,
         vdManager: VirtualDisplayManager,
+        servers: [(uuid: String, name: String, appName: String)],
         delegate: StatusBarController
     ) {
         let assignedVD = vdManager.assignedVD(for: output.displayId)
-        let title = assignedVD != nil
-            ? "  \(output.displayAlias) → \(assignedVD!.name)"
-            : "  \(output.displayAlias)"
-        let nameItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        nameItem.isEnabled = false
-        menu.addItem(nameItem)
 
-        // Assignment submenu
-        let assignMenu = NSMenu()
-        let noneItem = NSMenuItem(
-            title: "None (black)",
-            action: #selector(StatusBarController.assignPhysical(_:)),
+        // ── Header: "Built-in Retina Display   ● Live" ────────────────────
+        let statusDot: String
+        if let vd = assignedVD {
+            if let src = vd.sourceUUID {
+                statusDot = servers.contains(where: { $0.uuid == src }) ? "● Live" : "⚠ No Signal"
+            } else {
+                statusDot = "○ No Source"
+            }
+        } else {
+            statusDot = "○ Unassigned"
+        }
+        let headerItem = NSMenuItem(
+            title: "\(output.displayAlias)   \(statusDot)",
+            action: nil,
             keyEquivalent: ""
         )
-        noneItem.representedObject = ["displayId": output.displayId, "vdId": ""] as [String: Any]
-        noneItem.target = delegate
-        noneItem.state = (assignedVD == nil) ? .on : .off
-        assignMenu.addItem(noneItem)
-        assignMenu.addItem(.separator())
+        headerItem.isEnabled = false
+        menu.addItem(headerItem)
 
-        for vd in vdManager.displays {
-            let item = NSMenuItem(
-                title: vd.name,
-                action: #selector(StatusBarController.assignPhysical(_:)),
+        // ── Source submenu ─────────────────────────────────────────────────
+        if let vd = assignedVD {
+            // Source is selected against the assigned VD
+            let sourceMenu = NSMenu()
+            let noneItem = NSMenuItem(
+                title: "None",
+                action: #selector(StatusBarController.setPhysicalSource(_:)),
                 keyEquivalent: ""
             )
-            item.representedObject = ["displayId": output.displayId, "vdId": vd.id] as [String: Any]
-            item.target = delegate
-            item.state = (assignedVD?.id == vd.id) ? .on : .off
-            assignMenu.addItem(item)
+            noneItem.representedObject = ["displayId": output.displayId, "uuid": ""] as [String: Any]
+            noneItem.target = delegate
+            noneItem.state = (vd.sourceUUID == nil) ? .on : .off
+            sourceMenu.addItem(noneItem)
+            if !servers.isEmpty { sourceMenu.addItem(.separator()) }
+
+            for server in servers {
+                let displayName = server.appName.isEmpty || server.appName == server.name
+                    ? server.name
+                    : "\(server.appName): \(server.name)"
+                let item = NSMenuItem(
+                    title: displayName,
+                    action: #selector(StatusBarController.setPhysicalSource(_:)),
+                    keyEquivalent: ""
+                )
+                item.representedObject = ["displayId": output.displayId, "uuid": server.uuid] as [String: Any]
+                item.target = delegate
+                item.state = (vd.sourceUUID == server.uuid) ? .on : .off
+                sourceMenu.addItem(item)
+            }
+
+            let currentSourceName: String = {
+                guard let uuid = vd.sourceUUID else { return "None" }
+                if let s = servers.first(where: { $0.uuid == uuid }) { return s.name }
+                if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
+                return "Syphon (offline)"
+            }()
+            let sourceItem = NSMenuItem(title: "  Source: \(currentSourceName)", action: nil, keyEquivalent: "")
+            sourceItem.submenu = sourceMenu
+            menu.addItem(sourceItem)
+        } else {
+            // No VD assigned — offer to assign one (source = choose VD)
+            let assignMenu = NSMenu()
+            if vdManager.displays.isEmpty {
+                let emptyItem = NSMenuItem(title: "No Virtual Displays", action: nil, keyEquivalent: "")
+                emptyItem.isEnabled = false
+                assignMenu.addItem(emptyItem)
+            } else {
+                for vd in vdManager.displays {
+                    let item = NSMenuItem(
+                        title: vd.name,
+                        action: #selector(StatusBarController.assignPhysical(_:)),
+                        keyEquivalent: ""
+                    )
+                    item.representedObject = ["displayId": output.displayId, "vdId": vd.id] as [String: Any]
+                    item.target = delegate
+                    assignMenu.addItem(item)
+                }
+            }
+            let assignItem = NSMenuItem(title: "  Source: Assign Virtual Display…", action: nil, keyEquivalent: "")
+            assignItem.submenu = assignMenu
+            menu.addItem(assignItem)
         }
 
-        let assignItem = NSMenuItem(title: "    Assign to", action: nil, keyEquivalent: "")
-        assignItem.submenu = assignMenu
-        menu.addItem(assignItem)
+        // ── Mode submenu ───────────────────────────────────────────────────
+        let modeMenu = NSMenu()
+        let currentMode = assignedVD?.mode ?? output.currentMode
+        for (title, mode) in [
+            ("Signal",       SYPHON_OUT_MODE_SIGNAL),
+            ("Freeze",       SYPHON_OUT_MODE_FREEZE),
+            ("Blank Black",  SYPHON_OUT_MODE_BLANK_BLACK),
+            ("Blank White",  SYPHON_OUT_MODE_BLANK_WHITE),
+            ("Test Pattern", SYPHON_OUT_MODE_BLANK_TEST_PATTERN),
+            ("Off",          SYPHON_OUT_MODE_OFF),
+        ] {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(StatusBarController.setPhysicalMode(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = ["displayId": output.displayId, "mode": mode.rawValue] as [String: Any]
+            item.target = delegate
+            item.state = (currentMode == mode) ? .on : .off
+            modeMenu.addItem(item)
+        }
+        let modeLbl = modeName(currentMode)
+        let modeItem = NSMenuItem(title: "  Mode: \(modeLbl)", action: nil, keyEquivalent: "")
+        modeItem.submenu = modeMenu
+        menu.addItem(modeItem)
 
-        // Scale mode submenu (Fill / Fit)
+        // ── Scale submenu ──────────────────────────────────────────────────
         let scaleMenu = NSMenu()
         let currentScale = output.currentScaleMode
-        for (label, scaleMode) in [("Fill (stretch)", SYPHON_OUT_SCALE_MODE_FILL),
-                                    ("Fit (letterbox)", SYPHON_OUT_SCALE_MODE_FIT)] {
+        for (label, scaleMode) in [
+            ("Fill (stretch)",  SYPHON_OUT_SCALE_MODE_FILL),
+            ("Fit (letterbox)", SYPHON_OUT_SCALE_MODE_FIT),
+        ] {
             let item = NSMenuItem(
                 title: label,
                 action: #selector(StatusBarController.setScaleMode(_:)),
@@ -298,51 +221,23 @@ enum MenuBuilder {
             item.state = (currentScale == scaleMode) ? .on : .off
             scaleMenu.addItem(item)
         }
-        let scaleItem = NSMenuItem(title: "    Scale", action: nil, keyEquivalent: "")
+        let scaleLbl = (currentScale == SYPHON_OUT_SCALE_MODE_FILL) ? "Fill" : "Fit"
+        let scaleItem = NSMenuItem(title: "  Scale: \(scaleLbl)", action: nil, keyEquivalent: "")
         scaleItem.submenu = scaleMenu
         menu.addItem(scaleItem)
+    }
 
-        // Mode controls (only shown when no VD is assigned — legacy path)
-        if assignedVD == nil {
-            // Signal / Freeze / Off — direct items
-            for (title, action) in [
-                ("Signal", #selector(StatusBarController.setModeSignal(_:))),
-                ("Freeze", #selector(StatusBarController.setModeFreeze(_:))),
-                ("Off",    #selector(StatusBarController.setModeOff(_:))),
-            ] as [(String, Selector)] {
-                let item = NSMenuItem(title: "    \(title)", action: action, keyEquivalent: "")
-                item.representedObject = output
-                item.target = delegate
-                menu.addItem(item)
-            }
+    // MARK: - Helpers
 
-            // Blank variants — collected into a submenu
-            let blankMenu = NSMenu()
-            for (title, action) in [
-                ("Black",        #selector(StatusBarController.setModeBlackBlank(_:))),
-                ("White",        #selector(StatusBarController.setModeWhiteBlank(_:))),
-                ("Test Pattern", #selector(StatusBarController.setModeTestPattern(_:))),
-            ] as [(String, Selector)] {
-                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-                item.representedObject = output
-                item.target = delegate
-                blankMenu.addItem(item)
-            }
-            let blankItem = NSMenuItem(title: "    Blank…", action: nil, keyEquivalent: "")
-            blankItem.submenu = blankMenu
-            menu.addItem(blankItem)
-
-            let signal = syphonout_get_signal_status(output.displayId)
-            let statusText: String
-            switch signal {
-            case SYPHON_OUT_SIGNAL_PRESENT:            statusText = "● Live"
-            case SYPHON_OUT_SIGNAL_NO_SIGNAL:          statusText = "⚠ No Signal"
-            case SYPHON_OUT_SIGNAL_NO_SOURCE_SELECTED: statusText = "○ No Source"
-            default:                                    statusText = "Unknown"
-            }
-            let statusItem = NSMenuItem(title: "    \(statusText)", action: nil, keyEquivalent: "")
-            statusItem.isEnabled = false
-            menu.addItem(statusItem)
+    private static func modeName(_ mode: SyphonOutMode) -> String {
+        switch mode {
+        case SYPHON_OUT_MODE_SIGNAL:             return "Signal"
+        case SYPHON_OUT_MODE_FREEZE:             return "Freeze"
+        case SYPHON_OUT_MODE_BLANK_BLACK:        return "Blank Black"
+        case SYPHON_OUT_MODE_BLANK_WHITE:        return "Blank White"
+        case SYPHON_OUT_MODE_BLANK_TEST_PATTERN: return "Test Pattern"
+        case SYPHON_OUT_MODE_OFF:                return "Off"
+        default:                                  return "Mode(\(mode.rawValue))"
         }
     }
 
@@ -355,8 +250,8 @@ enum MenuBuilder {
                     to: [(uuid: String, name: String, appName: String)].self)
                 for i in 0..<Int(count) {
                     let info = infoPtr[i]
-                    let uuid    = info.uuid    != nil ? String(cString: info.uuid)     : ""
-                    let name    = info.name    != nil ? String(cString: info.name)     : ""
+                    let uuid    = info.uuid     != nil ? String(cString: info.uuid)     : ""
+                    let name    = info.name     != nil ? String(cString: info.name)     : ""
                     let appName = info.app_name != nil ? String(cString: info.app_name) : ""
                     arr.pointee.append((uuid: uuid, name: name, appName: appName))
                 }
