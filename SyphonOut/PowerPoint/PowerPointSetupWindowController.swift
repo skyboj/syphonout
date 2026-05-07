@@ -7,12 +7,12 @@ import AppKit
 /// Not Used), and hit Apply.
 ///
 /// Apply does two things:
-///  1. Finds the PowerPoint "Slide Show" window and moves it fullscreen to
-///     the selected display using WindowMover (Accessibility API).
+///  1. Finds the PowerPoint "Slide Show" window and moves it to the selected
+///     display using WindowMover (Accessibility API).  If PowerPoint is not
+///     yet running the panel watches for the window in the background and
+///     moves it automatically when it appears.
 ///  2. Sets the "Speaker Notes" display to mirror the MacBook built-in
-///     screen at the OS level via CGConfigureDisplayMirrorOfDisplay —
-///     this is a system setting that survives app crashes and requires no
-///     further involvement from SyphonOut.
+///     screen at the OS level via CGConfigureDisplayMirrorOfDisplay.
 ///
 /// Remove Mirror undoes the OS mirroring.
 
@@ -46,7 +46,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     private var applyButton:  NSButton!
     private var removeMirrorButton: NSButton!
 
-    private var refreshTimer: Timer?
+    private var displayRefreshTimer: Timer?
+
+    /// WindowInventory used to watch for PPT Slide Show after Apply is clicked.
+    private var slideShowWatcher: WindowInventory?
+    /// The NSScreen we want to move the Slide Show window to.
+    private var watchTargetScreen: NSScreen?
 
     // MARK: - Init
 
@@ -73,7 +78,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         refreshDisplays()
-        startRefreshTimer()
+        startDisplayRefreshTimer()
     }
 
     // MARK: - UI
@@ -187,57 +192,38 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         return .notUsed
     }
 
-    // MARK: - Timer
+    // MARK: - Display refresh timer
 
-    private func startRefreshTimer() {
-        stopRefreshTimer()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+    private func startDisplayRefreshTimer() {
+        stopDisplayRefreshTimer()
+        displayRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshDisplays()
         }
     }
 
-    private func stopRefreshTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+    private func stopDisplayRefreshTimer() {
+        displayRefreshTimer?.invalidate()
+        displayRefreshTimer = nil
     }
 
     func windowWillClose(_ notification: Notification) {
-        stopRefreshTimer()
+        stopDisplayRefreshTimer()
+        stopSlideShowWatcher()
     }
 
     // MARK: - Apply
 
     @objc private func applySetup() {
-        let slideShowID    = roles.first { $0.value == .slideShow }?.key
+        stopSlideShowWatcher()
+
+        let slideShowID     = roles.first { $0.value == .slideShow }?.key
         let speakerMirrorID = roles.first { $0.value == .speakerMirror }?.key
-        let builtinID      = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
+        let builtinID       = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
 
         var messages: [String] = []
 
-        // 1. Move PowerPoint Slide Show window to the selected display
-        if let targetID = slideShowID,
-           let targetScreen = NSScreen.screens.first(where: {
-               ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetID
-           }) {
-            guard let wid = findSlideShowWindowID() else {
-                AppLog.shared.warn("PPT Setup: no Slide Show window found — open PowerPoint first", category: "PPTSetup")
-                setStatus("⚠ No PowerPoint Slide Show window found. Open it first.")
-                return
-            }
-            let windowInfo = WindowInfo(id: wid,
-                                        title: "Slide Show",
-                                        appName: "Microsoft PowerPoint",
-                                        appIcon: nil,
-                                        pid: 0,
-                                        frame: .zero)
-            AppLog.shared.info("PPT Setup: moving Slide Show to \(targetScreen.localizedName) + fullscreen", category: "PPTSetup")
-            WindowMover.move(windowInfo, to: targetScreen, resize: false, fullscreen: true)
-            messages.append("Slide Show → \(targetScreen.localizedName)")
-        }
-
-        // 2. System-level mirror for the speaker notes display
+        // ── 1. System-level mirror for the speaker notes display ──────────
         if let mirrorID = speakerMirrorID, mirrorID != builtinID {
-            // Mirror this display → built-in
             let masterID = builtinID ?? (displayIDs.first { $0 != mirrorID } ?? mirrorID)
             applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
             let mirrorName = roleCards.first { $0.displayID == mirrorID }?.displayName ?? "\(mirrorID)"
@@ -245,12 +231,35 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             AppLog.shared.info("PPT Setup: system mirror \(mirrorName) → \(masterName)", category: "PPTSetup")
             messages.append("Mirror: \(mirrorName) ← \(masterName)")
         } else if let mirrorID = speakerMirrorID, mirrorID == builtinID {
-            // Built-in selected as "speaker notes mirror" — nothing to do,
-            // MacBook screen already shows whatever is on it.
+            // Built-in selected as speaker notes — nothing to mirror.
             messages.append("Speaker: MacBook (no mirror needed)")
         }
 
-        setStatus("✓ " + messages.joined(separator: "  |  "))
+        // ── 2. Move PowerPoint Slide Show window ──────────────────────────
+        guard let targetID = slideShowID,
+              let targetScreen = NSScreen.screens.first(where: {
+                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetID
+              }) else {
+            // No Slide Show role assigned — just apply mirror and done.
+            if messages.isEmpty { messages.append("Roles saved") }
+            setStatus("✓ " + messages.joined(separator: "  |  "))
+            return
+        }
+
+        if let window = findSlideShowWindow() {
+            // PPT is already running — move the window immediately.
+            AppLog.shared.info("PPT Setup: Slide Show found, moving to \(targetScreen.localizedName)", category: "PPTSetup")
+            WindowMover.move(window, to: targetScreen, resize: true, fullscreen: false)
+            messages.append("Slide Show → \(targetScreen.localizedName)")
+            setStatus("✓ " + messages.joined(separator: "  |  "))
+        } else {
+            // PPT not running yet — save the target and watch for the window.
+            AppLog.shared.info("PPT Setup: Slide Show not found, watching for it (target: \(targetScreen.localizedName))", category: "PPTSetup")
+            watchTargetScreen = targetScreen
+            let mirrorMsg = messages.isEmpty ? "" : messages.joined(separator: "  |  ") + "  |  "
+            setStatus(mirrorMsg + "⏳ Waiting for Slide Show window…")
+            startSlideShowWatcher(targetScreen: targetScreen)
+        }
     }
 
     @objc private func removeMirror() {
@@ -263,6 +272,33 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func setStatus(_ msg: String) {
         statusLabel.stringValue = msg
+    }
+
+    // MARK: - WindowInventory watcher
+
+    private func startSlideShowWatcher(targetScreen: NSScreen) {
+        let watcher = WindowInventory()
+        watcher.onUpdate = { [weak self] windows in
+            guard let self else { return }
+            guard let slideShowWindow = windows.first(where: {
+                $0.appName.localizedCaseInsensitiveContains("PowerPoint") &&
+                $0.title.localizedCaseInsensitiveContains("Slide Show")
+            }) else { return }
+
+            // Found the Slide Show window!
+            AppLog.shared.info("PPT Setup: Slide Show window appeared, moving to \(targetScreen.localizedName)", category: "PPTSetup")
+            WindowMover.move(slideShowWindow, to: targetScreen, resize: true, fullscreen: false)
+            self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
+            self.stopSlideShowWatcher()
+        }
+        watcher.start()
+        slideShowWatcher = watcher
+    }
+
+    private func stopSlideShowWatcher() {
+        slideShowWatcher?.stop()
+        slideShowWatcher = nil
+        watchTargetScreen = nil
     }
 
     // MARK: - System mirror API
@@ -291,12 +327,21 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - PowerPoint window lookup
 
-    /// Returns the CGWindowID of the PowerPoint Slide Show window, or nil.
-    private func findSlideShowWindowID() -> CGWindowID? {
-        pptSnapshotWindows().first {
+    /// Returns a WindowInfo for the PowerPoint Slide Show window, or nil.
+    private func findSlideShowWindow() -> WindowInfo? {
+        guard let entry = pptSnapshotWindows().first(where: {
             $0.appName.localizedCaseInsensitiveContains("PowerPoint") &&
             $0.title.localizedCaseInsensitiveContains("Slide Show")
-        }?.id
+        }) else { return nil }
+
+        return WindowInfo(
+            id:      entry.id,
+            title:   entry.title,
+            appName: entry.appName,
+            appIcon: nil,
+            pid:     entry.pid,
+            frame:   entry.frame
+        )
     }
 }
 
@@ -404,23 +449,33 @@ final class DisplayCard: NSView {
     }
 }
 
-// MARK: - CGWindowList quick snapshot (avoids async WindowInventory)
+// MARK: - CGWindowList snapshot
 
-/// Returns a synchronous snapshot of on-screen windows via CGWindowList.
-private func pptSnapshotWindows() -> [(id: CGWindowID, title: String, appName: String)] {
+/// Synchronous snapshot of on-screen windows via CGWindowList.
+/// Returns window ID, title, app name, PID, and Quartz-coordinate frame.
+private func pptSnapshotWindows() -> [(id: CGWindowID, title: String, appName: String, pid: pid_t, frame: CGRect)] {
     guard let rawList = CGWindowListCopyWindowInfo(
         [.optionOnScreenOnly, .excludeDesktopElements],
         kCGNullWindowID
     ) else { return [] }
 
     let list = rawList as NSArray
-    var result: [(id: CGWindowID, title: String, appName: String)] = []
+    var result: [(id: CGWindowID, title: String, appName: String, pid: pid_t, frame: CGRect)] = []
     for item in list {
         guard let dict = item as? NSDictionary else { continue }
         guard let wid   = dict[kCGWindowNumber]   as? Int,
               let title = dict[kCGWindowName]      as? String else { continue }
         let appName = dict[kCGWindowOwnerName] as? String ?? ""
-        result.append((id: CGWindowID(wid), title: title, appName: appName))
+        let pid     = dict[kCGWindowOwnerPID]  as? Int32  ?? 0
+
+        var frame = CGRect.zero
+        if let bounds = dict[kCGWindowBounds] as? NSDictionary,
+           let boundsRef = bounds as? CFDictionary {
+            CGRectMakeWithDictionaryRepresentation(boundsRef, &frame)
+        }
+
+        result.append((id: CGWindowID(wid), title: title, appName: appName,
+                       pid: pid_t(pid), frame: frame))
     }
     return result
 }
