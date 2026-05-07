@@ -57,21 +57,32 @@ enum WindowMover {
 
         // Fallback: when the app is in a fullscreen/presentation Space macOS returns
         // an empty kAXWindowsAttribute list. Try kAXFocusedWindowAttribute instead.
+        // When using this fallback we trust the element directly — fullscreen windows
+        // report AX position as (0,0) so frame/title matching would fail anyway.
+        var usedFocusedFallback = false
         if windowList.isEmpty {
             var rawFocused: CFTypeRef?
             if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &rawFocused) == .success,
                let focusedRef = rawFocused {
                 windowList = [focusedRef as! AXUIElement]
-                AppLog.shared.info("move: kAXWindowsAttribute empty — using kAXFocusedWindowAttribute fallback", category: "WindowMover")
+                usedFocusedFallback = true
+                AppLog.shared.info("move: kAXWindowsAttribute empty — using kAXFocusedWindowAttribute fallback directly", category: "WindowMover")
             } else {
                 AppLog.shared.error("move: kAXWindowsAttribute empty and kAXFocusedWindowAttribute also failed", category: "WindowMover")
                 return .axError(listErr)
             }
         }
 
-        guard let axWindow = findAXWindow(in: windowList, matching: window) else {
-            AppLog.shared.error("move: windowNotFound (could not match AXUIElement to '\(window.title)')", category: "WindowMover")
-            return .windowNotFound
+        let axWindow: AXUIElement
+        if usedFocusedFallback {
+            // Focused window comes from the correct PID — use it without matching.
+            axWindow = windowList[0]
+        } else {
+            guard let found = findAXWindow(in: windowList, matching: window) else {
+                AppLog.shared.error("move: windowNotFound (could not match AXUIElement to '\(window.title)')", category: "WindowMover")
+                return .windowNotFound
+            }
+            axWindow = found
         }
 
         if fullscreen {

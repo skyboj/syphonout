@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>SyphonOut needs to control Microsoft PowerPoint to configure which display shows the slideshow.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
