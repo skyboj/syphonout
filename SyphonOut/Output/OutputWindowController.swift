@@ -1,6 +1,8 @@
 import AppKit
 import QuartzCore
 import CoreVideo
+import IOKit
+import IOKit.graphics
 import os.log
 
 /// Manages one fullscreen NSWindow per display.
@@ -42,7 +44,7 @@ final class OutputWindowController {
     static var displayNameByUnit: [UInt32: String] = [:]
 
     /// Human-readable name for `displayId`.
-    /// Priority: user alias → live NSScreen → unit-number cache (mirrored) → generic fallback.
+    /// Priority: user alias → live NSScreen → unit-number cache → IOKit → generic fallback.
     static func screenName(for displayId: CGDirectDisplayID) -> String {
         if let alias = PreferencesStore.shared.displayAlias(for: displayId) { return alias }
         if let screen = NSScreen.screens.first(where: {
@@ -55,7 +57,46 @@ final class OutputWindowController {
         // Mirrored / off-screen display — look up the cached name by unit number.
         let unit = CGDisplayUnitNumber(displayId)
         if let cached = displayNameByUnit[unit] { return cached }
+        // Last resort: ask IOKit for the display's product name.
+        // This works even when the display is not in NSScreen.screens (e.g. mirror slave).
+        if let ioName = ioKitDisplayName(for: displayId) {
+            displayNameByUnit[unit] = ioName   // cache for future lookups
+            return ioName
+        }
         return "Display \(unit)"
+    }
+
+    /// Queries IOKit for the display product name. Works for offline / mirrored displays.
+    /// Uses vendor+model+serial matching (CGDisplayIOServicePort was removed in macOS 12).
+    static func ioKitDisplayName(for displayId: CGDirectDisplayID) -> String? {
+        let cgVendor = Int(CGDisplayVendorNumber(displayId))
+        let cgModel  = Int(CGDisplayModelNumber(displayId))
+        let cgSerial = Int(CGDisplaySerialNumber(displayId))
+
+        var iter: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(0,   // 0 = kIOMasterPortDefault
+                                           IOServiceMatching("IODisplayConnect"),
+                                           &iter) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iter) }
+
+        var service = IOIteratorNext(iter)
+        while service != 0 {
+            defer { IOObjectRelease(service); service = IOIteratorNext(iter) }
+            guard let cfDict = IODisplayCreateInfoDictionary(service,
+                                                              IOOptionBits(kIODisplayOnlyPreferredName)),
+                  let info = cfDict.takeRetainedValue() as? [String: Any] else { continue }
+
+            let vendor = info["DisplayVendorID"]     as? Int ?? 0
+            let model  = info["DisplayProductID"]    as? Int ?? 0
+            let serial = info["DisplaySerialNumber"] as? Int ?? 0
+
+            guard vendor == cgVendor && model == cgModel else { continue }
+            if cgSerial != 0 && serial != 0 && serial != cgSerial { continue }
+
+            if let names = info["DisplayProductName"] as? [String: String],
+               let name  = names.values.first { return name }
+        }
+        return nil
     }
 
     /// Seed the name cache from the current NSScreen list. Call this at launch and

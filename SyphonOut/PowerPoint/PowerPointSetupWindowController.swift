@@ -544,18 +544,15 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     /// With only one external display visible after mirrors, the restarted
     /// show MUST go to that external display (macOS + PPT convention).
     private func dumpPPTSettingsAndRestart() {
+        // Note: no backslash line continuations — they become literal \ in AppleScript
+        // and cause "Expected expression but found unknown token".
         let source = """
         tell application "Microsoft PowerPoint"
             try
                 if (count of presentations) = 0 then return "no-presentation"
-                set sss to slide show settings of active presentation
-                -- Dump all known properties for diagnostics
-                set propLog to "showType=" & (show type of sss as string) & \\
-                    " withPresenter=" & (show with presenter of sss as string) & \\
-                    " withAnimation=" & (show with animation of sss as string)
-                -- Restart slide show so PPT re-evaluates which display to use.
-                -- With only one external display (after SyphonOut mirrors applied),
-                -- PPT will place the Slide Show there automatically.
+                set ap to active presentation
+                set sss to slide show settings of ap
+                set propLog to "showType=" & (show type of sss as string) & " withPresenter=" & (show with presenter of sss as string)
                 try
                     set ssw to slide show window of ap
                     end show ssw
