@@ -335,12 +335,17 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             return
         }
 
-        // Wait 500 ms after applying mirrors: macOS needs a runloop pass to
-        // update NSScreen.screens and relocate windows from slave displays.
-        let mirrorMsg = messages.joined(separator: "  |  ")
-        setStatus((mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⏳ Moving Slide Show…")
+        // After a mirror change PPT needs 2-3 s to recognise the new display
+        // layout and reassign its internal Presenter View / Slide Show slots.
+        // Swapping too early sends Slide Show in the wrong direction.
+        // If no mirrors were actually changed, 0.5 s is still enough.
+        let mirrorsChanged = messages.contains(where: { $0.hasPrefix("Mirror:") || $0.hasPrefix("Unmirror:") })
+        let settleDelay: Double = mirrorsChanged ? 2.5 : 0.5
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        let mirrorMsg = messages.joined(separator: "  |  ")
+        setStatus((mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⏳ Waiting for display layout to settle…")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
             guard let self else { return }
             self.applyButton.isEnabled = true
             self.moveSlideShowToDisplay(targetID: targetID, mirrorMsg: mirrorMsg)
@@ -461,30 +466,20 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 // else: keep watcher running, retry next tick
 
             } else if !restartAttempted {
+                // Swap was clicked; wait for PPT to finish its display-swap animation.
+                // PPT's animation can take up to ~17 s (observed in logs), so don't
+                // restart until 25 s have elapsed without the slide show reaching target.
                 ticksAfterSwap += 1
-                // If the swap was pressed but 5 seconds later the slide show is
-                // STILL on MacBook (the mirror-slave bounce-back scenario), escalate
-                // to restarting the presentation so PPT re-detects the display layout.
-                let slideShowOnMacBook: Bool = {
-                    guard let mac = NSScreen.screens.first(where: { CGDisplayIsBuiltin(
-                        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? 0
-                    ) != 0 }) else { return false }
-                    return mac.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
-                }()
+                AppLog.shared.info("PPT watcher: waiting for swap to complete (tick \(ticksAfterSwap)/50)", category: "PPTSetup")
 
-                if ticksAfterSwap >= 10 && slideShowOnMacBook {
-                    // Swap didn't move it off MacBook — mirrors may have swallowed the
-                    // destination. Restart the presentation so PPT re-routes from scratch.
+                if ticksAfterSwap >= 50 {   // 25 s
+                    // Still wrong after 25 s — escalate to restarting PPT's presentation
+                    // so it re-detects the display layout (especially after mirror changes).
                     restartAttempted = true
-                    AppLog.shared.warn("PPT watcher: swap had no effect (mirror bounce-back?) — restarting slide show", category: "PPTSetup")
+                    AppLog.shared.warn("PPT watcher: 25 s after swap, still wrong — restarting slide show", category: "PPTSetup")
                     self.setStatus("↺ Restarting slide show for new display layout…")
-                    self.stopSlideShowWatcher()   // stop before restart to avoid races
-                    self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID)
-
-                } else if ticksAfterSwap >= 20 {
-                    AppLog.shared.warn("PPT watcher: giving up after 10s — Slide Show still not on target", category: "PPTSetup")
-                    self.setStatus("⚠ Could not route Slide Show — swap it manually in Presenter View")
                     self.stopSlideShowWatcher()
+                    self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID)
                 }
             }
         }
