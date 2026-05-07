@@ -397,40 +397,51 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             let pptWindows = windows.filter { $0.appName.localizedCaseInsensitiveContains("PowerPoint") }
             guard !pptWindows.isEmpty else { return }
 
-            // Wait until the Slide Show window appears — that's when we can check/swap.
+            // Dump every PPT window and the current NSScreen list so we can see
+            // exactly what's happening if the slide show ends up on the wrong display.
+            let screenDump = NSScreen.screens.enumerated().map { i, s -> String in
+                let did = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
+                return "[\(i)] \(s.localizedName) id=\(did) frame=\(s.frame)"
+            }.joined(separator: " | ")
+            AppLog.shared.info("PPT watcher: NSScreen.screens → \(screenDump)", category: "PPTSetup")
+
+            for w in pptWindows {
+                AppLog.shared.info("PPT watcher: window '\(w.title)' frame=\(w.frame)", category: "PPTSetup")
+            }
+
+            // Wait until the Slide Show window appears.
             guard let slideShowWindow = pptWindows.first(where: {
                 $0.title.localizedCaseInsensitiveContains("Slide Show")
             }) else { return }
 
+            let primaryH   = NSScreen.screens.first?.frame.height ?? 0
+            let windowMidX = slideShowWindow.frame.midX
+            let windowMidY = primaryH - slideShowWindow.frame.midY   // Quartz→AppKit
+
             guard let targetScreen = NSScreen.screens.first(where: {
                 ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
             }) else {
-                AppLog.shared.warn("PPT watcher: target display gone", category: "PPTSetup")
+                AppLog.shared.warn("PPT watcher: target display \(targetDisplayID) NOT in NSScreen.screens — was it mirrored away?", category: "PPTSetup")
+                self.setStatus("⚠ Presentation display not visible (mirrored?)")
                 self.stopSlideShowWatcher()
                 return
             }
 
-            // Check if window is already on the right screen.
-            let windowMidX = slideShowWindow.frame.midX
-            let primaryH   = NSScreen.screens.first?.frame.height ?? 0
-            let windowMidY = primaryH - slideShowWindow.frame.midY   // Quartz→AppKit
             let alreadyOnTarget = targetScreen.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
+            AppLog.shared.info(
+                "PPT watcher: slideShow midpoint=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) frame=\(targetScreen.frame) onTarget=\(alreadyOnTarget)",
+                category: "PPTSetup"
+            )
 
             if alreadyOnTarget {
                 AppLog.shared.info("PPT watcher: Slide Show is on \(targetScreen.localizedName) ✓", category: "PPTSetup")
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
+                self.stopSlideShowWatcher()
             } else {
-                AppLog.shared.warn(
-                    "PPT watcher: Slide Show on wrong display — calling swap displays → \(targetScreen.localizedName)",
-                    category: "PPTSetup"
-                )
-                // PPT hardcodes Slide Show to its "first external" display. If that's
-                // not our target, use AppleScript 'swap displays' — equivalent to
-                // clicking the "Swap Displays" button in Presenter View UI.
-                self.swapPPTDisplays()
-                self.setStatus("⇄ Swapping displays → \(targetScreen.localizedName)")
+                AppLog.shared.warn("PPT watcher: Slide Show on wrong display — will keep watching for correct placement", category: "PPTSetup")
+                self.setStatus("⏳ Waiting for Slide Show on \(targetScreen.localizedName)…")
+                // Don't stop — keep watching in case PPT moves it after initial placement.
             }
-            self.stopSlideShowWatcher()
         }
         // Fast polling: catch PPT before it commits to fullscreen on wrong display.
         watcher.start(interval: 0.5)
