@@ -438,18 +438,34 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         let monitorNumber = idx + 1   // PPT uses 1-based monitor index
         let screenName = screens[idx].localizedName
 
-        // Use a "tell" block — compound property names like "slide show monitor"
-        // must be accessed via tell, not via "of" chaining (causes parse error).
+        // Three-word property names like "slide show monitor" need pipe notation |...|
+        // to be parsed correctly by AppleScript. We also try alternate property names
+        // as fallbacks and dump the properties record so we can see what's available.
         let source = """
         tell application "Microsoft PowerPoint"
-            if (count of presentations) > 0 then
-                tell slide show settings of active presentation
-                    set slide show monitor to \(monitorNumber)
-                end tell
-                return "ok: monitor=\(monitorNumber)"
-            else
-                return "no presentation open"
-            end if
+            try
+                if (count of presentations) = 0 then return "no-presentation"
+                set sss to slide show settings of active presentation
+                -- Attempt 1: pipe-quoted three-word property name
+                try
+                    tell sss
+                        set |slide show monitor| to \(monitorNumber)
+                    end tell
+                    return "ok-piped:\(monitorNumber)"
+                on error e1
+                    -- Attempt 2: "display" (shorter alias some PPT versions expose)
+                    try
+                        set display of sss to \(monitorNumber)
+                        return "ok-display:\(monitorNumber)"
+                    on error e2
+                        -- Diagnostic: dump all properties so we know the real name
+                        set propDump to properties of sss as string
+                        return "FAILED e1=" & e1 & " e2=" & e2 & " props=" & propDump
+                    end try
+                end try
+            on error outerErr
+                return "OUTER:" & outerErr
+            end try
         end tell
         """
 

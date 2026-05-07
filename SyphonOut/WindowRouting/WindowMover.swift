@@ -52,8 +52,21 @@ enum WindowMover {
 
         var rawWindows: CFTypeRef?
         let listErr = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
-        guard listErr == .success, let windowList = rawWindows as? [AXUIElement] else {
-            return .axError(listErr)
+        var windowList: [AXUIElement] = (rawWindows as? [AXUIElement]) ?? []
+        AppLog.shared.info("move: kAXWindowsAttribute returned \(windowList.count) window(s) (err=\(listErr.rawValue))", category: "WindowMover")
+
+        // Fallback: when the app is in a fullscreen/presentation Space macOS returns
+        // an empty kAXWindowsAttribute list. Try kAXFocusedWindowAttribute instead.
+        if windowList.isEmpty {
+            var rawFocused: CFTypeRef?
+            if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &rawFocused) == .success,
+               let focusedRef = rawFocused {
+                windowList = [focusedRef as! AXUIElement]
+                AppLog.shared.info("move: kAXWindowsAttribute empty — using kAXFocusedWindowAttribute fallback", category: "WindowMover")
+            } else {
+                AppLog.shared.error("move: kAXWindowsAttribute empty and kAXFocusedWindowAttribute also failed", category: "WindowMover")
+                return .axError(listErr)
+            }
         }
 
         guard let axWindow = findAXWindow(in: windowList, matching: window) else {
