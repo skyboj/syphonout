@@ -451,19 +451,24 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             let pid = pid_t(slideShowWindow.pid)
 
             if !swapAttempted {
-                // Step 1: try clicking "Swap Displays" in Presenter View.
-                // clickSwapDisplaysInPresenterView returns true only when the button
-                // was actually pressed — false means AX returned empty windows (PPT
-                // is still transitioning after a display-config change). In that case
-                // we leave swapAttempted=false so the next 0.5s tick retries.
+                // Step 1: click Swap Displays to update PPT's internal display assignment
+                // (moves the window from MacBook→M550SL internally, updating PPT's routing).
+                // Step 2: 0.3s later, teleport the Slide Show window directly to the
+                // target display via AX kAXPositionAttribute — this bypasses PPT's
+                // slow animation AND the mirror-slave bounce-back problem (M550SL is
+                // slave so PPT's swap bounces back; D32x-D1 is independent and stays).
                 let clicked = self.clickSwapDisplaysInPresenterView(pid: pid)
                 if clicked {
                     swapAttempted = true
                     ticksAfterSwap = 0
-                    AppLog.shared.info("PPT watcher: Swap Displays clicked — watching for confirmation", category: "PPTSetup")
-                    self.setStatus("↩ Swapping displays…")
+                    self.setStatus("↩ Moving Slide Show to target display…")
+                    // Teleport after a brief pause to let PPT register the swap command
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        guard let self else { return }
+                        self.teleportSlideShowToDisplay(pid: pid, targetDisplayID: targetDisplayID)
+                    }
                 }
-                // else: keep watcher running, retry next tick
+                // else: empty window list — PPT transitioning; retry next 0.5s tick
 
             } else if !restartAttempted {
                 // Swap was clicked; wait for PPT to finish its display-swap animation.
@@ -485,6 +490,63 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         }
         watcher.start(interval: 0.5)
         slideShowWatcher = watcher
+    }
+
+    // MARK: - Direct AX window teleport
+
+    /// Moves the PPT Slide Show window directly to the target display by setting
+    /// kAXPositionAttribute and kAXSizeAttribute.  Called 0.3 s after clicking
+    /// "Swap Displays" so PPT has registered the swap (updating its internal
+    /// routing state from MacBook→M550SL to "external") before we override the
+    /// physical position to D32x-D1.
+    ///
+    /// This bypasses two problems:
+    ///  • PPT's 15+ s swap animation (we teleport instantly)
+    ///  • Mirror bounce-back (window on slave M550SL returns to master MacBook;
+    ///    D32x-D1 is an independent display so the window stays there)
+    private func teleportSlideShowToDisplay(pid: pid_t, targetDisplayID: CGDirectDisplayID) {
+        guard let targetScreen = NSScreen.screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
+        }) else {
+            AppLog.shared.warn("PPT teleport: target screen \(targetDisplayID) not in NSScreen", category: "PPTSetup")
+            return
+        }
+
+        let app = AXUIElementCreateApplication(pid)
+        var rawWindows: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+              let windows = rawWindows as? [AXUIElement] else {
+            AppLog.shared.warn("PPT teleport: no AX windows for pid=\(pid)", category: "PPTSetup")
+            return
+        }
+
+        guard let slideShowWin = windows.first(where: {
+            var rawTitle: CFTypeRef?
+            AXUIElementCopyAttributeValue($0, kAXTitleAttribute as CFString, &rawTitle)
+            return (rawTitle as? String ?? "").localizedCaseInsensitiveContains("Slide Show")
+        }) else {
+            AppLog.shared.warn("PPT teleport: Slide Show AX window not found (have \(windows.count) windows)", category: "PPTSetup")
+            return
+        }
+
+        // Convert AppKit frame (Y-up, origin=bottom-left of primary) to
+        // Quartz / AX coordinates (Y-down, origin=top-left of primary).
+        let primaryH = NSScreen.screens.first?.frame.height ?? 0
+        var position = CGPoint(x: targetScreen.frame.minX,
+                               y: primaryH - targetScreen.frame.maxY)
+        var size     = CGSize(width:  targetScreen.frame.width,
+                              height: targetScreen.frame.height)
+
+        guard let posValue  = AXValueCreate(.cgPoint, &position),
+              let sizeValue = AXValueCreate(.cgSize,  &size) else { return }
+
+        let posErr  = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, posValue)
+        let sizeErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute    as CFString, sizeValue)
+
+        AppLog.shared.info(
+            "PPT teleport: Slide Show → \(targetScreen.localizedName) Quartz(\(Int(position.x)),\(Int(position.y))) \(Int(size.width))×\(Int(size.height))  posErr=\(posErr.rawValue) sizeErr=\(sizeErr.rawValue)",
+            category: "PPTSetup"
+        )
     }
 
     // MARK: - Slide show restart
