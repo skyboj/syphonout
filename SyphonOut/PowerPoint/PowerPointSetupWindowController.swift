@@ -467,31 +467,23 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         let monitorNumber = idx + 1   // PPT uses 1-based monitor index
         let screenName = screens[idx].localizedName
 
-        // Three-word property names like "slide show monitor" need pipe notation |...|
-        // to be parsed correctly by AppleScript. We also try alternate property names
-        // as fallbacks and dump the properties record so we can see what's available.
+        // Three-word property names need pipe notation |...| to parse correctly.
+        // Also enable Presenter View so PowerPoint shows speaker notes + controls
+        // on the MacBook display automatically when the slide show runs on the
+        // external monitor.
         let source = """
         tell application "Microsoft PowerPoint"
             try
                 if (count of presentations) = 0 then return "no-presentation"
                 set sss to slide show settings of active presentation
-                -- Attempt 1: pipe-quoted three-word property name
-                try
-                    tell sss
-                        set |slide show monitor| to \(monitorNumber)
-                    end tell
-                    return "ok-piped:\(monitorNumber)"
-                on error e1
-                    -- Attempt 2: "display" (shorter alias some PPT versions expose)
+                tell sss
+                    set |slide show monitor| to \(monitorNumber)
+                    -- Enable Presenter View so MacBook gets speaker notes / controls
                     try
-                        set display of sss to \(monitorNumber)
-                        return "ok-display:\(monitorNumber)"
-                    on error e2
-                        -- Diagnostic: dump all properties so we know the real name
-                        set propDump to properties of sss as string
-                        return "FAILED e1=" & e1 & " e2=" & e2 & " props=" & propDump
+                        set |show presenter tools| to true
                     end try
-                end try
+                end tell
+                return "ok-piped:\(monitorNumber)"
             on error outerErr
                 return "OUTER:" & outerErr
             end try

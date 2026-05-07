@@ -37,6 +37,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             outputs.append(OutputWindowController(display: displayId))
         }
 
+        // Also add controllers for displays that are online but NOT in NSScreen.screens —
+        // these are already-mirrored displays that macOS hid from the screen list before
+        // we launched. Without this they don't appear in the tray until a screen-change event.
+        let knownIds = Set(outputs.map { $0.displayId })
+        var onlineCount: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &onlineCount)
+        var onlineIds = [CGDirectDisplayID](repeating: 0, count: Int(onlineCount))
+        CGGetOnlineDisplayList(onlineCount, &onlineIds, &onlineCount)
+        for displayId in onlineIds.prefix(Int(onlineCount)) {
+            guard !knownIds.contains(displayId) else { continue }
+            outputs.append(OutputWindowController(display: displayId))
+            logger.info("Display \(displayId) online but not in NSScreen (already mirrored) — adding controller")
+        }
+
         // 4b. Initialise Virtual Display manager.
         //     Shows output windows only for external displays that already have a saved assignment.
         //     The built-in MacBook display is NEVER auto-shown on launch — the user must
