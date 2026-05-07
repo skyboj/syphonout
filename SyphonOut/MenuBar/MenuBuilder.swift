@@ -95,10 +95,6 @@ enum MenuBuilder {
     ) {
         let assignedVD = vdManager.assignedVD(for: output.displayId)
 
-        // ── Thumbnail preview ──────────────────────────────────────────────
-        let thumbItem = makeDisplayThumbnailItem(for: output)
-        menu.addItem(thumbItem)
-
         // ── Header: "Built-in Retina Display  (Main)  ● Live" ────────────
         let statusDot: String
         if output.isMirrored {
@@ -120,6 +116,10 @@ enum MenuBuilder {
         )
         headerItem.isEnabled = false
         menu.addItem(headerItem)
+
+        // ── Thumbnail preview (below header) ─────────────────────────────
+        let thumbItem = makeDisplayThumbnailItem(for: output)
+        menu.addItem(thumbItem)
 
         // ── Source submenu ─────────────────────────────────────────────────
         if let vd = assignedVD {
@@ -238,39 +238,78 @@ enum MenuBuilder {
     /// Creates a non-interactive NSMenuItem containing a small live preview
     /// of the given display (captured synchronously via CGDisplayCreateImage).
     private static func makeDisplayThumbnailItem(for output: OutputWindowController) -> NSMenuItem {
-        let thumbW: CGFloat = 192
-        let thumbH: CGFloat = 108   // 16:9
+        let hPad: CGFloat = 14   // left/right margin inside the menu item
+        let vPad: CGFloat = 6    // top/bottom margin
+        let aspectRatio: CGFloat = 9.0 / 16.0
 
-        // Container view
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: thumbW + 16, height: thumbH + 12))
+        // Use the display's actual pixel aspect ratio if available,
+        // otherwise fall back to 16:9.
+        let displayAspect: CGFloat = {
+            let bounds = CGDisplayBounds(output.displayId)
+            guard bounds.width > 0, bounds.height > 0 else { return aspectRatio }
+            return bounds.height / bounds.width
+        }()
 
-        let imageView = NSImageView(frame: NSRect(x: 8, y: 6, width: thumbW, height: thumbH))
+        // The menu is typically ~270 pt wide; thumbnail fills the available width
+        // minus horizontal padding.
+        let menuWidth: CGFloat  = 270
+        let thumbW: CGFloat     = menuWidth - hPad * 2
+        let thumbH: CGFloat     = (thumbW * displayAspect).rounded()
+        let totalH: CGFloat     = thumbH + vPad * 2
+
+        // --- Outer container (stretches to menu width) ---
+        let container = MenuItemView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: totalH))
+
+        // --- Image / placeholder view ---
+        let imageView = NSImageView()
         imageView.wantsLayer = true
-        imageView.layer?.cornerRadius = 4
-        imageView.layer?.backgroundColor = NSColor.black.cgColor
+        imageView.layer?.cornerRadius = 5
+        imageView.layer?.masksToBounds = true
+        imageView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 1).cgColor
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: hPad),
+            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -hPad),
+            imageView.topAnchor.constraint(equalTo: container.topAnchor, constant: vPad),
+            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -vPad),
+        ])
 
         if output.isMirrored {
-            // Show a placeholder for mirrored displays
-            let label = NSTextField(labelWithString: "⌀")
-            label.font = .systemFont(ofSize: 28)
+            // Overlay "⌀ Mirrored" text on the dark background
+            let label = NSTextField(labelWithString: "⌀  Mirrored")
+            label.font = .systemFont(ofSize: 12, weight: .medium)
             label.textColor = .tertiaryLabelColor
             label.alignment = .center
-            label.frame = NSRect(x: 8, y: 6, width: thumbW, height: thumbH)
+            label.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            ])
         } else if let cgImage = CGDisplayCreateImage(output.displayId) {
             imageView.image = NSImage(cgImage: cgImage, size: .zero)
-            container.addSubview(imageView)
-        } else {
-            // Blank placeholder when display is off or capture fails
-            container.addSubview(imageView)
         }
+        // else: display off or capture failed → shows the dark background only
 
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         item.view = container
         item.isEnabled = false
         return item
+    }
+
+    // MARK: - MenuItemView
+
+    /// A plain NSView subclass used as an NSMenuItem.view.
+    /// Overrides intrinsicContentSize so Auto Layout gives it a stable height
+    /// and the menu doesn't collapse the view to zero.
+    private class MenuItemView: NSView {
+        override var intrinsicContentSize: NSSize {
+            return frame.size
+        }
     }
 
     // MARK: - Helpers
