@@ -350,24 +350,25 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             return
         }
 
-        // PRIMARY: set PPT's own slide show monitor preference via AppleScript.
-        // This is the only reliable mechanism — PPT overrides external window moves.
-        setPPTSlideShowMonitor(targetDisplayID: targetID)
+        // Enable Presenter View (the only real AppleScript property for display routing).
+        // PPT hardcodes: Presenter View on main display (menu bar), Slide Show on first
+        // external. The |slide show monitor| property does NOT exist in PPT's sdef —
+        // it accepts the set silently but discards it immediately. Correction is done
+        // via 'swap displays' in the watcher if PPT chose the wrong screen.
+        setPPTPresenterView()
 
         let screenName = targetScreen.localizedName
         let prefix = mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  "
 
         if findSlideShowWindow() != nil {
-            // Slide Show already running — fallback window move (may work for non-FS windows).
-            if let window = findSlideShowWindow() {
-                WindowMover.move(window, to: targetScreen, resize: true, fullscreen: false)
-            }
-            setStatus(prefix + "✓ Slide Show monitor → \(screenName) (restart presentation to apply)")
-        } else {
-            // Presentation not started yet — watcher will also try AppleScript once PPT
-            // opens a presentation, then verify the Slide Show appears on the right screen.
+            // Slide Show already running — check if it's on the right display and swap if not.
             watchTargetDisplayID = targetID
-            setStatus(prefix + "✓ Slide Show monitor set → \(screenName)  |  Start presentation to begin")
+            setStatus(prefix + "⏳ Checking Slide Show display…")
+            startSlideShowWatcher(targetDisplayID: targetID)
+        } else {
+            // Presentation not started yet — watcher will verify placement once it opens.
+            watchTargetDisplayID = targetID
+            setStatus(prefix + "✓ Ready → \(screenName)  |  Start presentation to begin")
             startSlideShowWatcher(targetDisplayID: targetID)
         }
     }
@@ -396,15 +397,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             let pptWindows = windows.filter { $0.appName.localizedCaseInsensitiveContains("PowerPoint") }
             guard !pptWindows.isEmpty else { return }
 
-            // As soon as PPT is running (any window), set its slide show monitor.
-            // Do this once per watcher session so we don't spam AppleScript.
-            if !monitorAlreadySet {
-                monitorAlreadySet = true
-                self.setPPTSlideShowMonitor(targetDisplayID: targetDisplayID)
-            }
-
-            // Once the Slide Show window actually appears, verify it landed on the
-            // right display.  If not (PPT ignored our AppleScript), try window move.
+            // Wait until the Slide Show window appears — that's when we can check/swap.
             guard let slideShowWindow = pptWindows.first(where: {
                 $0.title.localizedCaseInsensitiveContains("Slide Show")
             }) else { return }
@@ -428,14 +421,14 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
             } else {
                 AppLog.shared.warn(
-                    "PPT watcher: Slide Show on wrong display — restarting via AppleScript on \(targetScreen.localizedName)",
+                    "PPT watcher: Slide Show on wrong display — calling swap displays → \(targetScreen.localizedName)",
                     category: "PPTSetup"
                 )
-                // AX window moves are unreliable for PPT fullscreen. Instead, stop the
-                // current slide show and let PPT re-open it on the correct monitor
-                // (already configured via |slide show monitor| earlier).
-                self.restartSlideShowOnCorrectMonitor()
-                self.setStatus("↩ Restarting Slide Show → \(targetScreen.localizedName)")
+                // PPT hardcodes Slide Show to its "first external" display. If that's
+                // not our target, use AppleScript 'swap displays' — equivalent to
+                // clicking the "Swap Displays" button in Presenter View UI.
+                self.swapPPTDisplays()
+                self.setStatus("⇄ Swapping displays → \(targetScreen.localizedName)")
             }
             self.stopSlideShowWatcher()
         }
@@ -450,97 +443,63 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         watchTargetDisplayID = nil
     }
 
-    /// Stops the running PPT Slide Show and immediately restarts it so macOS
-    /// places it on the monitor configured by |slide show monitor|.
-    private func restartSlideShowOnCorrectMonitor() {
+    // MARK: - PowerPoint AppleScript
+
+    /// Enables Presenter View in PPT's slide show settings.
+    ///
+    /// NOTE: `slide show monitor` does NOT exist in PowerPoint for Mac's AppleScript
+    /// dictionary (confirmed by inspecting PowerPoint.sdef). Setting it silently
+    /// succeeds but is immediately discarded. PPT hardcodes: Presenter View on the
+    /// macOS main display (menu bar), Slide Show on the first external display.
+    /// The only reliable correction is `swap displays` after the show starts, which
+    /// is done by the watcher when it detects the show is on the wrong screen.
+    private func setPPTPresenterView() {
         let source = """
         tell application "Microsoft PowerPoint"
             try
                 if (count of presentations) = 0 then return "no-presentation"
-                set ap to active presentation
-                -- Stop any running slide show
-                try
-                    set ssw to slide show window of ap
-                    end show ssw
-                end try
-                -- Small pause for the window to close
-                delay 0.4
-                -- Restart on the configured monitor
-                run slide show (slide show settings of ap)
-                return "restarted"
+                set show with presenter of slide show settings of active presentation to true
+                return "presenter-view-enabled"
             on error e
                 return "error:" & e
             end try
         end tell
         """
-        DispatchQueue.global(qos: .userInitiated).async {
-            var errDict: NSDictionary?
-            let result = NSAppleScript(source: source)?.executeAndReturnError(&errDict)
-            DispatchQueue.main.async {
-                if let e = errDict {
-                    let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
-                    AppLog.shared.error("PPT restart error: \(msg)", category: "PPTSetup")
-                } else {
-                    AppLog.shared.info("PPT restart result: \(result?.stringValue ?? "nil")", category: "PPTSetup")
-                }
-            }
-        }
+        AppLog.shared.info("PPT AS: enabling Presenter View", category: "PPTSetup")
+        runAppleScript(source, category: "PPTSetup")
     }
 
-    // MARK: - PowerPoint AppleScript
-
-    /// Sets PPT's own "Slide Show > Show on" display preference via AppleScript.
-    ///
-    /// This is the primary mechanism — more reliable than AX window moves because
-    /// PPT respects its own setting and immediately routes future Slide Shows there.
-    ///
-    /// PPT numbers monitors 1-based in the same order as NSScreen.screens.
-    /// We find the target display's index in NSScreen.screens and pass that.
-    private func setPPTSlideShowMonitor(targetDisplayID: CGDirectDisplayID) {
-        let screens = NSScreen.screens
-        guard let idx = screens.firstIndex(where: {
-            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
-        }) else {
-            AppLog.shared.warn("PPT AS: target display \(targetDisplayID) not in NSScreen — skipping", category: "PPTSetup")
-            return
-        }
-        let monitorNumber = idx + 1   // PPT uses 1-based monitor index
-        let screenName = screens[idx].localizedName
-
-        // Three-word property names need pipe notation |...| to parse correctly.
-        // Also enable Presenter View so PowerPoint shows speaker notes + controls
-        // on the MacBook display automatically when the slide show runs on the
-        // external monitor.
+    /// Swaps which display shows the Slide Show vs Presenter View.
+    /// Uses the `swap displays` command on PPT's `presenter tool` object — the
+    /// AppleScript equivalent of clicking "Swap Displays" in the UI.
+    /// Only works while a slide show is actively running in Presenter View.
+    private func swapPPTDisplays() {
         let source = """
         tell application "Microsoft PowerPoint"
             try
-                if (count of presentations) = 0 then return "no-presentation"
-                set sss to slide show settings of active presentation
-                tell sss
-                    set |slide show monitor| to \(monitorNumber)
-                    -- Enable Presenter View so MacBook gets speaker notes / controls
-                    try
-                        set |show presenter tools| to true
-                    end try
-                end tell
-                return "ok-piped:\(monitorNumber)"
-            on error outerErr
-                return "OUTER:" & outerErr
+                set pvList to every presenter view window
+                if (count of pvList) = 0 then return "no-presenter-view"
+                swap displays (presenter tool of item 1 of pvList)
+                return "swapped"
+            on error e
+                return "error:" & e
             end try
         end tell
         """
+        AppLog.shared.info("PPT AS: swapping displays", category: "PPTSetup")
+        runAppleScript(source, category: "PPTSetup")
+    }
 
-        AppLog.shared.info("PPT AS: setting slideShowMonitor=\(monitorNumber) (\(screenName))", category: "PPTSetup")
-
+    private func runAppleScript(_ source: String, category: String) {
         DispatchQueue.global(qos: .userInitiated).async {
             var errDict: NSDictionary?
             let result = NSAppleScript(source: source)?.executeAndReturnError(&errDict)
             DispatchQueue.main.async {
                 if let e = errDict {
                     let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
-                    AppLog.shared.error("PPT AS error: \(msg)", category: "PPTSetup")
+                    AppLog.shared.error("PPT AS error: \(msg)", category: category)
                 } else {
-                    AppLog.shared.info("PPT AS result: \(result?.stringValue ?? "nil")", category: "PPTSetup")
+                    AppLog.shared.info("PPT AS result: \(result?.stringValue ?? "nil")", category: category)
                 }
             }
         }
