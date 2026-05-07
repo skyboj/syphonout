@@ -2,19 +2,17 @@ import AppKit
 
 /// PowerPoint Presentation Setup panel.
 ///
-/// Shows a live snapshot of every connected physical display so the user
-/// can visually identify them, assign roles (Slide Show / Speaker Notes /
-/// Not Used), and hit Apply.
+/// Shows a live snapshot of every physically-connected display (including
+/// OS-mirrored ones) so the user can assign roles, hit Apply, and have the
+/// Slide Show window automatically moved to the right screen.
 ///
-/// Apply does two things:
-///  1. Finds the PowerPoint "Slide Show" window and moves it to the selected
-///     display using WindowMover (Accessibility API).  If PowerPoint is not
-///     yet running the panel watches for the window in the background and
-///     moves it automatically when it appears.
-///  2. Sets the "Speaker Notes" display to mirror the MacBook built-in
-///     screen at the OS level via CGConfigureDisplayMirrorOfDisplay.
-///
-/// Remove Mirror undoes the OS mirroring.
+/// Apply order:
+///   1. Apply/remove OS mirrors.
+///   2. Wait 500 ms for macOS to settle and relocate any windows that were
+///      on the now-slave display.
+///   3. Look for the PPT Slide Show window.  If found → move immediately.
+///      If not found → start a WindowInventory watcher that fires when
+///      the window eventually appears.
 
 final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegate {
 
@@ -36,10 +34,13 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
-    /// Parallel to NSScreen.screens at the time of last refresh.
+    /// All physically-connected display IDs (NSScreen AND online-but-mirrored).
     private var displayIDs:   [CGDirectDisplayID] = []
     private var roleCards:    [DisplayCard]        = []
     private var roles:        [CGDirectDisplayID: Role] = [:]
+    /// Cache of display names — populated when a display is in NSScreen.screens
+    /// so we can show the right name even after it becomes a mirror slave.
+    private var displayNameCache: [CGDirectDisplayID: String] = [:]
 
     private var stackView:    NSStackView!
     private var statusLabel:  NSTextField!
@@ -48,16 +49,16 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private var displayRefreshTimer: Timer?
 
-    /// WindowInventory used to watch for PPT Slide Show after Apply is clicked.
-    private var slideShowWatcher: WindowInventory?
-    /// The NSScreen we want to move the Slide Show window to.
-    private var watchTargetScreen: NSScreen?
+    /// Watcher for PPT Slide Show — stores the target as a CGDirectDisplayID
+    /// so the NSScreen reference is resolved fresh at move time.
+    private var slideShowWatcher:    WindowInventory?
+    private var watchTargetDisplayID: CGDirectDisplayID?
 
     // MARK: - Init
 
     private init() {
         let win = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 340),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -86,7 +87,6 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     private func buildUI() {
         guard let contentView = window?.contentView else { return }
 
-        // Scroll + stack for display cards
         stackView = NSStackView()
         stackView.orientation = .horizontal
         stackView.spacing     = 16
@@ -102,14 +102,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(scrollView)
 
-        // Status label
         statusLabel = NSTextField(labelWithString: "")
         statusLabel.font      = .systemFont(ofSize: NSFont.smallSystemFontSize)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(statusLabel)
 
-        // Buttons
         applyButton = NSButton(title: "Apply", target: self, action: #selector(applySetup))
         applyButton.bezelStyle = .rounded
         applyButton.keyEquivalent = "\r"
@@ -143,38 +141,62 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - Display refresh
 
+    /// Returns all physically connected display IDs — both active (in NSScreen.screens)
+    /// and online-but-mirrored (not in NSScreen.screens, but CGDisplayIsOnline).
+    private func allOnlineDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &count)
+        guard count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetOnlineDisplayList(count, &ids, &count)
+        return Array(ids.prefix(Int(count)))
+    }
+
     private func refreshDisplays() {
-        let screens = NSScreen.screens
-        let ids = screens.compactMap {
+        // Prefer NSScreen ordering (stable, includes localizedName).
+        // Append any online-but-not-in-screens IDs (mirrored slaves) at the end.
+        var activeIDs: [CGDirectDisplayID] = NSScreen.screens.compactMap {
             $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         }
+        // Update name cache for all currently active screens
+        for screen in NSScreen.screens {
+            if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+                displayNameCache[id] = screen.localizedName
+            }
+        }
+        let activeSet = Set(activeIDs)
+        let mirroredIDs = allOnlineDisplayIDs().filter { !activeSet.contains($0) }
+        let allIDs = activeIDs + mirroredIDs
 
-        // If set of displays changed, rebuild cards
-        if ids != displayIDs {
-            displayIDs = ids
-            rebuildCards(screens: screens, ids: ids)
+        if allIDs != displayIDs {
+            displayIDs = allIDs
+            rebuildCards(allIDs: allIDs)
         }
 
-        // Refresh snapshots on all cards
-        for card in roleCards {
+        // Refresh snapshots (only active displays can be captured)
+        for card in roleCards where activeSet.contains(card.displayID) {
             card.refreshSnapshot()
         }
     }
 
-    private func rebuildCards(screens: [NSScreen], ids: [CGDirectDisplayID]) {
-        // Remove old cards
+    private func rebuildCards(allIDs: [CGDirectDisplayID]) {
         stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         roleCards.removeAll()
 
-        for (screen, displayID) in zip(screens, ids) {
-            // Preserve role if display was already known
-            let role = roles[displayID] ?? defaultRole(for: displayID, in: ids)
+        for displayID in allIDs {
+            let role = roles[displayID] ?? defaultRole(for: displayID, in: allIDs)
             roles[displayID] = role
 
+            let name    = displayNameCache[displayID] ?? "Display \(CGDisplayUnitNumber(displayID))"
+            let mirrored = !NSScreen.screens.contains {
+                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+            }
+
             let card = DisplayCard(
-                displayID: displayID,
-                displayName: screen.localizedName,
-                initialRole: role
+                displayID:    displayID,
+                displayName:  name,
+                isMirrored:   mirrored,
+                initialRole:  role
             ) { [weak self] newRole in
                 self?.roles[displayID] = newRole
             }
@@ -184,9 +206,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     }
 
     private func defaultRole(for displayID: CGDirectDisplayID, in allIDs: [CGDirectDisplayID]) -> Role {
-        // Built-in = speaker notes mirror by default
         if CGDisplayIsBuiltin(displayID) != 0 { return .speakerMirror }
-        // First external = slide show by default
         let firstExternal = allIDs.first { CGDisplayIsBuiltin($0) == 0 }
         if displayID == firstExternal { return .slideShow }
         return .notUsed
@@ -215,64 +235,75 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     @objc private func applySetup() {
         stopSlideShowWatcher()
+        applyButton.isEnabled = false
 
         let slideShowID      = roles.first { $0.value == .slideShow }?.key
-        // All displays assigned "Speaker Notes (Mirror)" role
         let speakerMirrorIDs = roles.filter { $0.value == .speakerMirror }.map { $0.key }
         let builtinID        = displayIDs.first { CGDisplayIsBuiltin($0) != 0 }
 
         var messages: [String] = []
 
-        // ── 1. System-level mirror for the speaker notes displays ─────────
-        //
-        // The built-in MacBook display is always the MASTER — it shows
-        // speaker notes natively. Every other display tagged "Speaker Notes
-        // (Mirror)" is configured to OS-mirror the built-in so it shows the
-        // same content. If there is no built-in, use the first tagged display
-        // as the master and mirror the rest.
-        let mirrorMasterID: CGDirectDisplayID? = builtinID
-            ?? speakerMirrorIDs.first
-
+        // ── 1. System-level mirror ────────────────────────────────────────
+        let mirrorMasterID: CGDirectDisplayID? = builtinID ?? speakerMirrorIDs.first
         let displaysToMirror = speakerMirrorIDs.filter { $0 != mirrorMasterID }
 
         if displaysToMirror.isEmpty && speakerMirrorIDs.contains(where: { $0 == builtinID }) {
-            // Only the built-in is tagged — nothing external to mirror.
             messages.append("Speaker: MacBook (no mirror needed)")
         } else {
             for mirrorID in displaysToMirror {
                 guard let masterID = mirrorMasterID else { continue }
                 applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
-                let mirrorName = roleCards.first { $0.displayID == mirrorID }?.displayName ?? "\(mirrorID)"
-                let masterName = roleCards.first { $0.displayID == masterID }?.displayName ?? "\(masterID)"
+                let mirrorName = displayNameCache[mirrorID] ?? "\(mirrorID)"
+                let masterName = displayNameCache[masterID] ?? "\(masterID)"
                 AppLog.shared.info("PPT Setup: system mirror \(mirrorName) ← \(masterName)", category: "PPTSetup")
                 messages.append("Mirror: \(mirrorName) ← \(masterName)")
             }
         }
 
-        // ── 2. Move PowerPoint Slide Show window ──────────────────────────
-        guard let targetID = slideShowID,
-              let targetScreen = NSScreen.screens.first(where: {
-                  ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetID
-              }) else {
-            // No Slide Show role assigned — just apply mirror and done.
+        // ── 2. Move Slide Show window ─────────────────────────────────────
+        // Store the target as a plain ID — resolve to NSScreen fresh at move
+        // time so we're not holding a stale NSScreen reference from before the
+        // mirror config change.
+        guard let targetID = slideShowID else {
             if messages.isEmpty { messages.append("Roles saved") }
             setStatus("✓ " + messages.joined(separator: "  |  "))
+            applyButton.isEnabled = true
+            return
+        }
+
+        // Wait 500 ms after applying mirrors: macOS needs a runloop pass to
+        // update NSScreen.screens and relocate windows from slave displays.
+        let mirrorMsg = messages.joined(separator: "  |  ")
+        setStatus((mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⏳ Moving Slide Show…")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.applyButton.isEnabled = true
+            self.moveSlideShowToDisplay(targetID: targetID, mirrorMsg: mirrorMsg)
+        }
+    }
+
+    private func moveSlideShowToDisplay(targetID: CGDirectDisplayID, mirrorMsg: String) {
+        // Resolve target NSScreen fresh after mirror config has settled.
+        guard let targetScreen = NSScreen.screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetID
+        }) else {
+            AppLog.shared.warn("PPT Setup: target display \(targetID) not in NSScreen.screens after settling", category: "PPTSetup")
+            setStatus((mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⚠ Target display unavailable")
             return
         }
 
         if let window = findSlideShowWindow() {
-            // PPT is already running — move the window immediately.
-            AppLog.shared.info("PPT Setup: Slide Show found, moving to \(targetScreen.localizedName)", category: "PPTSetup")
+            AppLog.shared.info("PPT Setup: moving Slide Show to \(targetScreen.localizedName)", category: "PPTSetup")
             WindowMover.move(window, to: targetScreen, resize: true, fullscreen: false)
-            messages.append("Slide Show → \(targetScreen.localizedName)")
-            setStatus("✓ " + messages.joined(separator: "  |  "))
+            let msg = (mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "✓ Slide Show → \(targetScreen.localizedName)"
+            setStatus(msg)
         } else {
-            // PPT not running yet — save the target and watch for the window.
-            AppLog.shared.info("PPT Setup: Slide Show not found, watching for it (target: \(targetScreen.localizedName))", category: "PPTSetup")
-            watchTargetScreen = targetScreen
-            let mirrorMsg = messages.isEmpty ? "" : messages.joined(separator: "  |  ") + "  |  "
-            setStatus(mirrorMsg + "⏳ Waiting for Slide Show window…")
-            startSlideShowWatcher(targetScreen: targetScreen)
+            AppLog.shared.info("PPT Setup: Slide Show not found, watching (target: \(targetScreen.localizedName))", category: "PPTSetup")
+            watchTargetDisplayID = targetID
+            let msg = (mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⏳ Waiting for Slide Show window…"
+            setStatus(msg)
+            startSlideShowWatcher(targetDisplayID: targetID)
         }
     }
 
@@ -290,7 +321,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - WindowInventory watcher
 
-    private func startSlideShowWatcher(targetScreen: NSScreen) {
+    private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
         let watcher = WindowInventory()
         watcher.onUpdate = { [weak self] windows in
             guard let self else { return }
@@ -299,8 +330,16 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 $0.title.localizedCaseInsensitiveContains("Slide Show")
             }) else { return }
 
-            // Found the Slide Show window!
-            AppLog.shared.info("PPT Setup: Slide Show window appeared, moving to \(targetScreen.localizedName)", category: "PPTSetup")
+            // Resolve target screen fresh each time — display config may have
+            // changed since the watcher was started.
+            guard let targetScreen = NSScreen.screens.first(where: {
+                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
+            }) else {
+                AppLog.shared.warn("PPT Setup watcher: target display \(targetDisplayID) not found in NSScreen", category: "PPTSetup")
+                return
+            }
+
+            AppLog.shared.info("PPT Setup: Slide Show appeared, moving to \(targetScreen.localizedName)", category: "PPTSetup")
             WindowMover.move(slideShowWindow, to: targetScreen, resize: true, fullscreen: false)
             self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
             self.stopSlideShowWatcher()
@@ -311,8 +350,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func stopSlideShowWatcher() {
         slideShowWatcher?.stop()
-        slideShowWatcher = nil
-        watchTargetScreen = nil
+        slideShowWatcher  = nil
+        watchTargetDisplayID = nil
     }
 
     // MARK: - System mirror API
@@ -327,7 +366,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         CGConfigureDisplayMirrorOfDisplay(config, mirrorDisplay, masterDisplay)
         let err = CGCompleteDisplayConfiguration(config, .forSession)
         if err != CGError.success {
-            AppLog.shared.error("PPT Setup: CGCompleteDisplayConfiguration failed err=\(err.rawValue)", category: "PPTSetup")
+            AppLog.shared.error("PPT Setup: CGCompleteDisplayConfiguration err=\(err.rawValue)", category: "PPTSetup")
         }
     }
 
@@ -341,7 +380,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - PowerPoint window lookup
 
-    /// Returns a WindowInfo for the PowerPoint Slide Show window, or nil.
+    /// Finds the PPT Slide Show window using CGWindowList (ALL windows, not just
+    /// onscreen-only — catches fullscreen windows on other Spaces).
     private func findSlideShowWindow() -> WindowInfo? {
         guard let entry = pptSnapshotWindows().first(where: {
             $0.appName.localizedCaseInsensitiveContains("PowerPoint") &&
@@ -361,11 +401,11 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
 // MARK: - DisplayCard
 
-/// One card in the panel representing a single physical display.
 final class DisplayCard: NSView {
 
     let displayID:   CGDirectDisplayID
     let displayName: String
+    let isMirrored:  Bool
     private let onRoleChange: (PowerPointSetupWindowController.Role) -> Void
 
     private let snapshotView: NSImageView
@@ -373,26 +413,30 @@ final class DisplayCard: NSView {
     private let rolePicker:   NSPopUpButton
 
     init(
-        displayID:   CGDirectDisplayID,
-        displayName: String,
-        initialRole: PowerPointSetupWindowController.Role,
+        displayID:    CGDirectDisplayID,
+        displayName:  String,
+        isMirrored:   Bool,
+        initialRole:  PowerPointSetupWindowController.Role,
         onRoleChange: @escaping (PowerPointSetupWindowController.Role) -> Void
     ) {
         self.displayID    = displayID
         self.displayName  = displayName
+        self.isMirrored   = isMirrored
         self.onRoleChange = onRoleChange
 
         snapshotView = NSImageView()
-        snapshotView.imageScaling  = .scaleProportionallyUpOrDown
+        snapshotView.imageScaling   = .scaleProportionallyUpOrDown
         snapshotView.imageAlignment = .alignCenter
-        snapshotView.wantsLayer    = true
-        snapshotView.layer?.cornerRadius = 4
-        snapshotView.layer?.backgroundColor = NSColor.black.cgColor
+        snapshotView.wantsLayer     = true
+        snapshotView.layer?.cornerRadius      = 4
+        snapshotView.layer?.masksToBounds     = true
+        snapshotView.layer?.backgroundColor   = NSColor(white: 0.1, alpha: 1).cgColor
         snapshotView.translatesAutoresizingMaskIntoConstraints = false
 
         let isMain = (NSScreen.main?.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
-        nameLabel = NSTextField(labelWithString: isMain ? "\(displayName) (Main)" : displayName)
+        let nameSuffix = isMain ? " (Main)" : isMirrored ? " ⌀" : ""
+        nameLabel = NSTextField(labelWithString: displayName + nameSuffix)
         nameLabel.font      = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         nameLabel.alignment = .center
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -404,19 +448,23 @@ final class DisplayCard: NSView {
             rolePicker.lastItem?.tag = role.rawValue
         }
         rolePicker.selectItem(withTag: initialRole.rawValue)
+        rolePicker.isEnabled = !isMirrored   // mirrored display is shown but not reassignable
 
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-
         addSubview(snapshotView)
         addSubview(nameLabel)
         addSubview(rolePicker)
 
-        // Built-in display: highlight border to hint it's the MacBook screen
+        // Built-in: blue accent border; mirrored: dim border
+        wantsLayer = true
         if CGDisplayIsBuiltin(displayID) != 0 {
-            wantsLayer = true
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
-            layer?.borderWidth = 1.5
+            layer?.borderColor  = NSColor.controlAccentColor.cgColor
+            layer?.borderWidth  = 1.5
+            layer?.cornerRadius = 6
+        } else if isMirrored {
+            layer?.borderColor  = NSColor.tertiaryLabelColor.cgColor
+            layer?.borderWidth  = 1
             layer?.cornerRadius = 6
         }
 
@@ -424,7 +472,7 @@ final class DisplayCard: NSView {
         rolePicker.action = #selector(pickerChanged)
 
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 200),
+            widthAnchor.constraint(equalToConstant: 210),
 
             snapshotView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             snapshotView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
@@ -441,19 +489,32 @@ final class DisplayCard: NSView {
             rolePicker.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
         ])
 
+        if isMirrored {
+            // Show a "⌀ Mirrored" overlay on the snapshot area
+            let label = NSTextField(labelWithString: "⌀  Mirrored")
+            label.font      = .systemFont(ofSize: 12, weight: .medium)
+            label.textColor = .tertiaryLabelColor
+            label.alignment = .center
+            label.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(label)
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: snapshotView.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: snapshotView.centerYAnchor),
+            ])
+        }
+
         refreshSnapshot()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     func refreshSnapshot() {
+        guard !isMirrored else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             guard let cgImage = CGDisplayCreateImage(self.displayID) else { return }
             let nsImage = NSImage(cgImage: cgImage, size: .zero)
-            DispatchQueue.main.async {
-                self.snapshotView.image = nsImage
-            }
+            DispatchQueue.main.async { self.snapshotView.image = nsImage }
         }
     }
 
@@ -465,13 +526,14 @@ final class DisplayCard: NSView {
     }
 }
 
-// MARK: - CGWindowList snapshot
+// MARK: - CGWindowList snapshot (all windows, not onscreen-only)
 
-/// Synchronous snapshot of on-screen windows via CGWindowList.
-/// Returns window ID, title, app name, PID, and Quartz-coordinate frame.
+/// Synchronous snapshot of ALL windows via CGWindowList — includes windows on
+/// other Spaces and fullscreen presentations that optionOnScreenOnly would miss.
 private func pptSnapshotWindows() -> [(id: CGWindowID, title: String, appName: String, pid: pid_t, frame: CGRect)] {
+    // Note: no .optionOnScreenOnly — we want windows on all Spaces.
     guard let rawList = CGWindowListCopyWindowInfo(
-        [.optionOnScreenOnly, .excludeDesktopElements],
+        [.excludeDesktopElements],
         kCGNullWindowID
     ) else { return [] }
 
@@ -479,17 +541,17 @@ private func pptSnapshotWindows() -> [(id: CGWindowID, title: String, appName: S
     var result: [(id: CGWindowID, title: String, appName: String, pid: pid_t, frame: CGRect)] = []
     for item in list {
         guard let dict = item as? NSDictionary else { continue }
-        guard let wid   = dict[kCGWindowNumber]   as? Int,
-              let title = dict[kCGWindowName]      as? String else { continue }
+        guard let wid   = dict[kCGWindowNumber] as? Int,
+              let title = dict[kCGWindowName]   as? String,
+              !title.isEmpty else { continue }
         let appName = dict[kCGWindowOwnerName] as? String ?? ""
         let pid     = dict[kCGWindowOwnerPID]  as? Int32  ?? 0
 
         var frame = CGRect.zero
-        if let bounds = dict[kCGWindowBounds] as? NSDictionary,
+        if let bounds    = dict[kCGWindowBounds] as? NSDictionary,
            let boundsRef = bounds as? CFDictionary {
             CGRectMakeWithDictionaryRepresentation(boundsRef, &frame)
         }
-
         result.append((id: CGWindowID(wid), title: title, appName: appName,
                        pid: pid_t(pid), frame: frame))
     }
