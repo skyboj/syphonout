@@ -321,16 +321,24 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             return
         }
 
-        if let window = findSlideShowWindow() {
-            AppLog.shared.info("PPT Setup: moving Slide Show to \(targetScreen.localizedName)", category: "PPTSetup")
-            WindowMover.move(window, to: targetScreen, resize: true, fullscreen: false)
-            let msg = (mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "✓ Slide Show → \(targetScreen.localizedName)"
-            setStatus(msg)
+        // PRIMARY: set PPT's own slide show monitor preference via AppleScript.
+        // This is the only reliable mechanism — PPT overrides external window moves.
+        setPPTSlideShowMonitor(targetDisplayID: targetID)
+
+        let screenName = targetScreen.localizedName
+        let prefix = mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  "
+
+        if findSlideShowWindow() != nil {
+            // Slide Show already running — fallback window move (may work for non-FS windows).
+            if let window = findSlideShowWindow() {
+                WindowMover.move(window, to: targetScreen, resize: true, fullscreen: false)
+            }
+            setStatus(prefix + "✓ Slide Show monitor → \(screenName) (restart presentation to apply)")
         } else {
-            AppLog.shared.info("PPT Setup: Slide Show not found, watching (target: \(targetScreen.localizedName))", category: "PPTSetup")
+            // Presentation not started yet — watcher will also try AppleScript once PPT
+            // opens a presentation, then verify the Slide Show appears on the right screen.
             watchTargetDisplayID = targetID
-            let msg = (mirrorMsg.isEmpty ? "" : mirrorMsg + "  |  ") + "⏳ Waiting for Slide Show window…"
-            setStatus(msg)
+            setStatus(prefix + "✓ Slide Show monitor set → \(screenName)  |  Start presentation to begin")
             startSlideShowWatcher(targetDisplayID: targetID)
         }
     }
@@ -351,28 +359,55 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
         let watcher = WindowInventory()
+        var monitorAlreadySet = false   // avoid spamming AppleScript every 0.5s
+
         watcher.onUpdate = { [weak self] (windows: [WindowInfo]) in
             guard let self else { return }
-            guard let slideShowWindow = windows.first(where: {
-                $0.appName.localizedCaseInsensitiveContains("PowerPoint") &&
+
+            let pptWindows = windows.filter { $0.appName.localizedCaseInsensitiveContains("PowerPoint") }
+            guard !pptWindows.isEmpty else { return }
+
+            // As soon as PPT is running (any window), set its slide show monitor.
+            // Do this once per watcher session so we don't spam AppleScript.
+            if !monitorAlreadySet {
+                monitorAlreadySet = true
+                self.setPPTSlideShowMonitor(targetDisplayID: targetDisplayID)
+            }
+
+            // Once the Slide Show window actually appears, verify it landed on the
+            // right display.  If not (PPT ignored our AppleScript), try window move.
+            guard let slideShowWindow = pptWindows.first(where: {
                 $0.title.localizedCaseInsensitiveContains("Slide Show")
             }) else { return }
 
-            // Resolve target screen fresh each time — display config may have
-            // changed since the watcher was started.
             guard let targetScreen = NSScreen.screens.first(where: {
                 ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
             }) else {
-                AppLog.shared.warn("PPT Setup watcher: target display \(targetDisplayID) not found in NSScreen", category: "PPTSetup")
+                AppLog.shared.warn("PPT watcher: target display gone", category: "PPTSetup")
+                self.stopSlideShowWatcher()
                 return
             }
 
-            AppLog.shared.info("PPT Setup: Slide Show appeared, moving to \(targetScreen.localizedName)", category: "PPTSetup")
-            WindowMover.move(slideShowWindow, to: targetScreen, resize: true, fullscreen: false)
-            self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
+            // Check if window is already on the right screen.
+            let windowMidX = slideShowWindow.frame.midX
+            let primaryH   = NSScreen.screens.first?.frame.height ?? 0
+            let windowMidY = primaryH - slideShowWindow.frame.midY   // Quartz→AppKit
+            let alreadyOnTarget = targetScreen.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
+
+            if alreadyOnTarget {
+                AppLog.shared.info("PPT watcher: Slide Show is on \(targetScreen.localizedName) ✓", category: "PPTSetup")
+                self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
+            } else {
+                AppLog.shared.warn(
+                    "PPT watcher: Slide Show on wrong display — trying window move to \(targetScreen.localizedName)",
+                    category: "PPTSetup"
+                )
+                WindowMover.move(slideShowWindow, to: targetScreen, resize: true, fullscreen: false)
+                self.setStatus("↩ Slide Show moved → \(targetScreen.localizedName)")
+            }
             self.stopSlideShowWatcher()
         }
-        // Fast polling: catch the window before PPT enters fullscreen mode.
+        // Fast polling: catch PPT before it commits to fullscreen on wrong display.
         watcher.start(interval: 0.5)
         slideShowWatcher = watcher
     }
@@ -381,6 +416,56 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         slideShowWatcher?.stop()
         slideShowWatcher  = nil
         watchTargetDisplayID = nil
+    }
+
+    // MARK: - PowerPoint AppleScript
+
+    /// Sets PPT's own "Slide Show > Show on" display preference via AppleScript.
+    ///
+    /// This is the primary mechanism — more reliable than AX window moves because
+    /// PPT respects its own setting and immediately routes future Slide Shows there.
+    ///
+    /// PPT numbers monitors 1-based in the same order as NSScreen.screens.
+    /// We find the target display's index in NSScreen.screens and pass that.
+    private func setPPTSlideShowMonitor(targetDisplayID: CGDirectDisplayID) {
+        let screens = NSScreen.screens
+        guard let idx = screens.firstIndex(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
+        }) else {
+            AppLog.shared.warn("PPT AS: target display \(targetDisplayID) not in NSScreen — skipping", category: "PPTSetup")
+            return
+        }
+        let monitorNumber = idx + 1   // PPT uses 1-based monitor index
+        let screenName = screens[idx].localizedName
+
+        // Note: "slide show monitor" is the AppleScript property name (with spaces).
+        // The value 0 = auto/primary; 1..N = specific monitor.
+        let source = """
+        tell application "Microsoft PowerPoint"
+            if (count of presentations) > 0 then
+                set sss to slide show settings of active presentation
+                set slide show monitor of sss to \(monitorNumber)
+                return "ok: monitor=\(monitorNumber)"
+            else
+                return "no presentation open"
+            end if
+        end tell
+        """
+
+        AppLog.shared.info("PPT AS: setting slideShowMonitor=\(monitorNumber) (\(screenName))", category: "PPTSetup")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var errDict: NSDictionary?
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&errDict)
+            DispatchQueue.main.async {
+                if let e = errDict {
+                    let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
+                    AppLog.shared.error("PPT AS error: \(msg)", category: "PPTSetup")
+                } else {
+                    AppLog.shared.info("PPT AS result: \(result?.stringValue ?? "nil")", category: "PPTSetup")
+                }
+            }
+        }
     }
 
     // MARK: - System mirror API
