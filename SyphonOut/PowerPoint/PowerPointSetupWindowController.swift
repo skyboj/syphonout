@@ -222,7 +222,11 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             let isMirror = !activeSet.contains(displayID)
 
             // Look up name by unit number — survives ID changes after mirroring.
-            let name = nameByUnit[unit] ?? "Display \(unit)"
+            // Fall back to OutputWindowController's app-wide cache (seeded at launch
+            // from NSScreen before any mirrors were applied).
+            let name = nameByUnit[unit]
+                ?? OutputWindowController.displayNameByUnit[unit]
+                ?? "Display \(unit)"
 
             // Look up (or default) role by unit number.
             let role: Role
