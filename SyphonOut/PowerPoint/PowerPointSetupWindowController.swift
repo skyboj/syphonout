@@ -81,6 +81,35 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         NSApp.activate(ignoringOtherApps: true)
         refreshDisplays()
         startDisplayRefreshTimer()
+        requestAppleEventsPermission()
+    }
+
+    /// Proactively request Automation permission for Microsoft PowerPoint.
+    /// macOS 10.14+ requires explicit user authorization before any Apple Event
+    /// can be sent. Running a benign "get name" script triggers the system dialog
+    /// the first time; subsequent calls are instant (TCC cache hit).
+    private func requestAppleEventsPermission() {
+        DispatchQueue.global(qos: .background).async {
+            var errDict: NSDictionary?
+            let script = NSAppleScript(source: """
+            tell application "Microsoft PowerPoint"
+                get name
+            end tell
+            """)
+            let result = script?.executeAndReturnError(&errDict)
+            DispatchQueue.main.async {
+                if let e = errDict {
+                    let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
+                    if msg.contains("Not authorized") {
+                        AppLog.shared.warn("PPT AS: Automation permission denied — ask user to enable in System Settings → Privacy & Security → Automation", category: "PPTSetup")
+                    } else {
+                        AppLog.shared.info("PPT AS: permission probe: \(msg)", category: "PPTSetup")
+                    }
+                } else {
+                    AppLog.shared.info("PPT AS: Automation permission granted (probe='\(result?.stringValue ?? "ok")')", category: "PPTSetup")
+                }
+            }
+        }
     }
 
     // MARK: - UI
