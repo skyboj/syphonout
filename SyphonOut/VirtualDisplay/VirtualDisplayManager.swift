@@ -269,6 +269,16 @@ final class VirtualDisplayManager: ObservableObject {
 
     func assignPhysical(displayId: CGDirectDisplayID, vdUUID: String) {
         let vdName = displays.first { $0.id == vdUUID }?.name ?? vdUUID.prefix(8) + "…"
+
+        // Enforce 1-to-1: if this VD is already assigned to another physical display,
+        // unassign it there first. This prevents two displays sharing one VD and
+        // accidentally mirroring mode/source changes to each other.
+        let previouslyAssigned = assignments.filter { $0.value == vdUUID && $0.key != displayId }
+        for (otherDisplayId, _) in previouslyAssigned {
+            AppLog.shared.info("assignPhysical: unassigning vd='\(vdName)' from display=\(otherDisplayId) (1:1 rule)", category: "VDManager")
+            unassignPhysical(displayId: otherDisplayId)
+        }
+
         assignments[displayId] = vdUUID
         vdUUID.withCString { vdC in
             syphonout_physical_assign(UInt32(displayId), vdC)
