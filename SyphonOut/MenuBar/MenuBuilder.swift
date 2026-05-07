@@ -279,11 +279,13 @@ enum MenuBuilder {
         ])
 
         if output.isMirrored {
-            // Mirrored slave: capture via the master display so we show what's
-            // actually on screen. Overlay a small badge so the user knows it's mirrored.
+            // Try to capture the slave display's own framebuffer first — macOS sometimes
+            // maintains one even for mirrored slaves. Fall back to the master display if nil.
+            // In a mirror set both framebuffers are identical, so either gives the real signal.
             let masterID = CGDisplayMirrorsDisplay(output.displayId)
-            let captureID = (masterID != kCGNullDirectDisplay) ? masterID : output.displayId
-            if let cgImage = CGDisplayCreateImage(captureID) {
+            let captureImage: CGImage? = CGDisplayCreateImage(output.displayId)
+                ?? (masterID != kCGNullDirectDisplay ? CGDisplayCreateImage(masterID) : nil)
+            if let cgImage = captureImage {
                 imageView.image = NSImage(cgImage: cgImage, size: .zero)
             }
             // "⌀ Mirrored" badge — small, bottom-right corner
