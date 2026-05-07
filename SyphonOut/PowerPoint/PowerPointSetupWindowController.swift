@@ -399,7 +399,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - WindowInventory watcher
 
-    private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
+    /// - allowFullscreenRestart: when true, the watcher will call restartForFullscreen()
+    ///   after confirming the Slide Show reached the target via teleport.  Set to false
+    ///   for the "verify-only" watcher that runs after the fullscreen restart so we
+    ///   don't loop indefinitely.
+    private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID,
+                                       allowFullscreenRestart: Bool = true) {
         let watcher = WindowInventory()
         // swapAttempted = true ONLY when the button was actually pressed (not on AX failure).
         // This lets us retry on the next tick if PPT's windows weren't accessible yet.
@@ -435,20 +440,34 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             }
 
             let alreadyOnTarget = targetScreen.frame.contains(CGPoint(x: windowMidX, y: windowMidY))
+            let pid = pid_t(slideShowWindow.pid)
             AppLog.shared.info(
                 "PPT watcher: mid=(\(Int(windowMidX)),\(Int(windowMidY))) target=\(targetScreen.localizedName) \(targetScreen.frame) onTarget=\(alreadyOnTarget)",
                 category: "PPTSetup"
             )
 
             if alreadyOnTarget {
-                AppLog.shared.info("PPT watcher: Slide Show ✓ on \(targetScreen.localizedName)", category: "PPTSetup")
-                self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
-                self.stopSlideShowWatcher()
+                if swapAttempted && allowFullscreenRestart {
+                    // We had to teleport the window — it's on the right display but
+                    // PPT couldn't resize it (sizeErr=-25200), so it's not fullscreen.
+                    // Restart the slide show so PPT re-enters proper fullscreen on the
+                    // target display (which is now the only external after mirroring).
+                    AppLog.shared.info(
+                        "PPT watcher: Slide Show on \(targetScreen.localizedName) via teleport — restarting for fullscreen",
+                        category: "PPTSetup"
+                    )
+                    self.setStatus("↺ Entering fullscreen on \(targetScreen.localizedName)…")
+                    self.stopSlideShowWatcher()
+                    self.restartForFullscreen(pid: pid, targetDisplayID: targetDisplayID)
+                } else {
+                    AppLog.shared.info("PPT watcher: Slide Show ✓ on \(targetScreen.localizedName)", category: "PPTSetup")
+                    self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
+                    self.stopSlideShowWatcher()
+                }
                 return
             }
 
             // ── Wrong display ──────────────────────────────────────────────
-            let pid = pid_t(slideShowWindow.pid)
 
             if !swapAttempted {
                 // Step 1: click Swap Displays to update PPT's internal display assignment
@@ -484,7 +503,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                     AppLog.shared.warn("PPT watcher: 25 s after swap, still wrong — restarting slide show", category: "PPTSetup")
                     self.setStatus("↺ Restarting slide show for new display layout…")
                     self.stopSlideShowWatcher()
-                    self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID)
+                    self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID, allowFullscreenRestart: false)
                 }
             }
         }
@@ -551,11 +570,20 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     // MARK: - Slide show restart
 
+    /// Called when the watcher has confirmed the Slide Show reached the target
+    /// display via teleport, but the window is not fullscreen (PPT blocks AX size
+    /// changes).  Ends and restarts the slide show so PPT enters proper fullscreen.
+    private func restartForFullscreen(pid: pid_t, targetDisplayID: CGDirectDisplayID) {
+        AppLog.shared.info("PPT fullscreen: restarting slide show to enter fullscreen on target display", category: "PPTSetup")
+        restartSlideShow(pid: pid, targetDisplayID: targetDisplayID, allowFullscreenRestart: false)
+    }
+
     /// Exits the running PPT slide show (via AX fullscreen toggle + AppleScript)
     /// and immediately restarts it.  After a mirror-config change, PPT may have
     /// stale display assignments; restarting forces it to re-detect the new layout
     /// (e.g. MacBook + D32x-D1 after M550SL was mirrored from MacBook).
-    private func restartSlideShow(pid: pid_t, targetDisplayID: CGDirectDisplayID) {
+    private func restartSlideShow(pid: pid_t, targetDisplayID: CGDirectDisplayID,
+                                   allowFullscreenRestart: Bool = true) {
         let app = AXUIElementCreateApplication(pid)
 
         // Step 1: tell the Slide Show window to leave fullscreen so AppleScript
@@ -616,7 +644,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                             self.setStatus("↺ Presentation restarted — verifying display…")
                             // Give PPT 2 s to open the slide show, then watch.
                             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                                self?.startSlideShowWatcher(targetDisplayID: targetDisplayID)
+                                self?.startSlideShowWatcher(targetDisplayID: targetDisplayID,
+                                                            allowFullscreenRestart: allowFullscreenRestart)
                             }
                         }
                     }
