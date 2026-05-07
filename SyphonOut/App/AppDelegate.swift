@@ -159,8 +159,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ── Removed displays ──────────────────────────────────────────────
         let removedIds = currentIds.subtracting(liveIds)
         for id in removedIds {
-            // Clean up assignment in VDM before destroying the controller
-            // (deinit stops the DisplayLink and calls syphonout_output_destroy)
+            // CGDisplayIsOnline returns non-zero when the display is physically
+            // connected but OS-mirrored (disappears from NSScreen.screens while
+            // still present as hardware). Don't remove it — the menu should keep
+            // showing it so the user can see and change its state.
+            if CGDisplayIsOnline(id) != 0 {
+                logger.info("Display \(id) left NSScreen.screens but is still online (mirrored) — keeping controller")
+                continue
+            }
+            // Display is truly offline (cable unplugged).  Clean up.
             VirtualDisplayManager.shared.unassignPhysical(displayId: id)
             outputs.removeAll { $0.displayId == id }
             logger.info("Display \(id) disconnected — output removed")

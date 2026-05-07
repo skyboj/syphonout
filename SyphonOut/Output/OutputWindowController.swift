@@ -20,6 +20,23 @@ final class OutputWindowController {
 
     var isVisible: Bool { window?.isVisible ?? false }
 
+    /// True when this display currently carries the macOS menu bar.
+    var isMainDisplay: Bool {
+        guard let mainID = NSScreen.main?.deviceDescription[
+            NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else { return false }
+        return mainID == displayId
+    }
+
+    /// True when the display is physically connected but OS-mirrored
+    /// (no longer in NSScreen.screens).
+    var isMirrored: Bool {
+        let inScreens = NSScreen.screens.contains {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayId
+        }
+        return !inScreens && CGDisplayIsOnline(displayId) != 0
+    }
+
     /// Human-readable name for `displayId` using the screen's localizedName as the default.
     static func screenName(for displayId: CGDirectDisplayID) -> String {
         if let alias = PreferencesStore.shared.displayAlias(for: displayId) { return alias }

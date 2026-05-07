@@ -390,7 +390,9 @@ final class DisplayCard: NSView {
         snapshotView.layer?.backgroundColor = NSColor.black.cgColor
         snapshotView.translatesAutoresizingMaskIntoConstraints = false
 
-        nameLabel = NSTextField(labelWithString: displayName)
+        let isMain = (NSScreen.main?.deviceDescription[
+            NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
+        nameLabel = NSTextField(labelWithString: isMain ? "\(displayName) (Main)" : displayName)
         nameLabel.font      = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         nameLabel.alignment = .center
         nameLabel.translatesAutoresizingMaskIntoConstraints = false

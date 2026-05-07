@@ -95,9 +95,15 @@ enum MenuBuilder {
     ) {
         let assignedVD = vdManager.assignedVD(for: output.displayId)
 
-        // ── Header: "Built-in Retina Display   ● Live" ────────────────────
+        // ── Thumbnail preview ──────────────────────────────────────────────
+        let thumbItem = makeDisplayThumbnailItem(for: output)
+        menu.addItem(thumbItem)
+
+        // ── Header: "Built-in Retina Display  (Main)  ● Live" ────────────
         let statusDot: String
-        if let vd = assignedVD {
+        if output.isMirrored {
+            statusDot = "⌀ Mirrored"
+        } else if let vd = assignedVD {
             if let src = vd.sourceUUID {
                 statusDot = servers.contains(where: { $0.uuid == src }) ? "● Live" : "⚠ No Signal"
             } else {
@@ -106,8 +112,9 @@ enum MenuBuilder {
         } else {
             statusDot = "○ Unassigned"
         }
+        let mainBadge = output.isMainDisplay ? "  (Main)" : ""
         let headerItem = NSMenuItem(
-            title: "\(output.displayAlias)   \(statusDot)",
+            title: "\(output.displayAlias)\(mainBadge)   \(statusDot)",
             action: nil,
             keyEquivalent: ""
         )
@@ -224,6 +231,46 @@ enum MenuBuilder {
         let scaleItem = NSMenuItem(title: "  Scale: \(scaleLbl)", action: nil, keyEquivalent: "")
         scaleItem.submenu = scaleMenu
         menu.addItem(scaleItem)
+    }
+
+    // MARK: - Display thumbnail
+
+    /// Creates a non-interactive NSMenuItem containing a small live preview
+    /// of the given display (captured synchronously via CGDisplayCreateImage).
+    private static func makeDisplayThumbnailItem(for output: OutputWindowController) -> NSMenuItem {
+        let thumbW: CGFloat = 192
+        let thumbH: CGFloat = 108   // 16:9
+
+        // Container view
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: thumbW + 16, height: thumbH + 12))
+
+        let imageView = NSImageView(frame: NSRect(x: 8, y: 6, width: thumbW, height: thumbH))
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 4
+        imageView.layer?.backgroundColor = NSColor.black.cgColor
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageAlignment = .alignCenter
+
+        if output.isMirrored {
+            // Show a placeholder for mirrored displays
+            let label = NSTextField(labelWithString: "⌀")
+            label.font = .systemFont(ofSize: 28)
+            label.textColor = .tertiaryLabelColor
+            label.alignment = .center
+            label.frame = NSRect(x: 8, y: 6, width: thumbW, height: thumbH)
+            container.addSubview(label)
+        } else if let cgImage = CGDisplayCreateImage(output.displayId) {
+            imageView.image = NSImage(cgImage: cgImage, size: .zero)
+            container.addSubview(imageView)
+        } else {
+            // Blank placeholder when display is off or capture fails
+            container.addSubview(imageView)
+        }
+
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.view = container
+        item.isEnabled = false
+        return item
     }
 
     // MARK: - Helpers
