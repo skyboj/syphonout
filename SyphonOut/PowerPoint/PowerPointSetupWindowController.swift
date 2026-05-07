@@ -444,9 +444,19 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
                 self.stopSlideShowWatcher()
             } else {
-                AppLog.shared.warn("PPT watcher: Slide Show on WRONG display — dumping PPT settings + restarting", category: "PPTSetup")
-                self.setStatus("↩ Restarting Slide Show on \(targetScreen.localizedName)…")
-                self.dumpPPTSettingsAndRestart()
+                // Slide Show is on MacBook, Presenter View is on external (PPT swapped them).
+                // Use WindowMover with fullscreen=true: it exits AXFullScreen, moves the
+                // window to the target display, then re-enters native fullscreen.
+                // AppleScript restart (end show + run) fails with -32192 while the show
+                // is in fullscreen mode, so AX is the only path.
+                AppLog.shared.warn(
+                    "PPT watcher: Slide Show on wrong display — AX move+fullscreen to \(targetScreen.localizedName)",
+                    category: "PPTSetup"
+                )
+                // fullscreen: false → WindowMover detects AXFullScreen=true, exits FS,
+                // moves to targetScreen, then re-enters native fullscreen on that screen.
+                WindowMover.move(slideShowWindow, to: targetScreen, resize: false, fullscreen: false)
+                self.setStatus("↩ Moving Slide Show → \(targetScreen.localizedName)")
                 self.stopSlideShowWatcher()
             }
         }
