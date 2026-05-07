@@ -227,6 +227,13 @@ final class VirtualDisplayManager: ObservableObject {
         vdId.withCString { syphonout_vd_set_mode($0, mode) }
         save()
         AppLog.shared.info("setMode vd='\(vdName)' → \(displays[index].modeDescription)", category: "VDManager")
+        // Notify output windows assigned to this VD so they can show/hide
+        // (Off hides the NSWindow; any other mode brings it back).
+        NotificationCenter.default.post(
+            name: .vdModeChanged,
+            object: nil,
+            userInfo: ["vdId": vdId, "mode": mode.rawValue]
+        )
     }
 
     /// Set the mode on every virtual display at once (used by global hotkeys).

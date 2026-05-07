@@ -18,6 +18,8 @@ final class OutputWindowController {
 
     private(set) var currentMode: SyphonOutMode = SYPHON_OUT_MODE_SIGNAL
 
+    var isVisible: Bool { window?.isVisible ?? false }
+
     /// Human-readable name for `displayId` using the screen's localizedName as the default.
     static func screenName(for displayId: CGDirectDisplayID) -> String {
         if let alias = PreferencesStore.shared.displayAlias(for: displayId) { return alias }

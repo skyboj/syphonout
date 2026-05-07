@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private var screenChangeObserver: NSObjectProtocol?
     private var assignmentObserver: NSObjectProtocol?
+    private var vdModeObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: "com.syphonout.SyphonOut", category: "AppDelegate")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,6 +72,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { return }
             if let output = self.outputs.first(where: { $0.displayId == displayId }) {
                 assigned ? output.showOutput() : output.hideOutput()
+            }
+        }
+
+        // 7b. Show/hide output windows when a VD mode changes to/from Off.
+        //     This handles the case where mode is set via VirtualDisplayManager
+        //     (e.g. through the menu's Mode submenu) rather than directly on the
+        //     OutputWindowController.
+        vdModeObserver = NotificationCenter.default.addObserver(
+            forName: .vdModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let vdId   = note.userInfo?["vdId"]   as? String,
+                  let rawMode = note.userInfo?["mode"]   as? UInt32
+            else { return }
+            let mode = SyphonOutMode(rawValue: rawMode)
+            // Find all physical displays assigned to this VD and update their windows.
+            let vdm = VirtualDisplayManager.shared
+            for output in self.outputs {
+                guard vdm.assignedVD(for: output.displayId)?.id == vdId else { continue }
+                if mode == SYPHON_OUT_MODE_OFF {
+                    output.hideOutput()
+                } else if !output.isVisible {
+                    output.showOutput()
+                }
             }
         }
 
@@ -161,4 +188,5 @@ extension Notification.Name {
     static let syphonServersChanged  = Notification.Name("SyphonOutServersChanged")
     static let vdAssignmentChanged   = Notification.Name("SyphonOutVDAssignmentChanged")
     static let vdListChanged         = Notification.Name("SyphonOutVDListChanged")
+    static let vdModeChanged         = Notification.Name("SyphonOutVDModeChanged")
 }
