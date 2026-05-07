@@ -470,19 +470,50 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     }
 
     /// Swaps which display shows the Slide Show vs Presenter View.
-    /// Uses the `swap displays` command on PPT's `presenter tool` object — the
-    /// AppleScript equivalent of clicking "Swap Displays" in the UI.
-    /// Only works while a slide show is actively running in Presenter View.
+    /// Tries multiple syntaxes because the sdef entry for `swap displays` is
+    /// ambiguous about whether the presenter tool is a direct parameter or target.
     private func swapPPTDisplays() {
         let source = """
         tell application "Microsoft PowerPoint"
             try
+                -- Approach 1: tell-block on presenter tool via presenter view window list
                 set pvList to every presenter view window
-                if (count of pvList) = 0 then return "no-presenter-view"
-                swap displays (presenter tool of item 1 of pvList)
-                return "swapped"
-            on error e
-                return "error:" & e
+                if (count of pvList) > 0 then
+                    try
+                        set pt to presenter tool of item 1 of pvList
+                        tell pt
+                            swap displays
+                        end tell
+                        return "swapped-via-pvw-tell"
+                    on error e1
+                        -- Approach 2: swap displays sent directly to app
+                        try
+                            swap displays
+                            return "swapped-direct"
+                        on error e2
+                            -- Approach 3: tell-block on presenter tool via slide show window
+                            try
+                                set pt2 to presenter tool of slide show window of active presentation
+                                tell pt2
+                                    swap displays
+                                end tell
+                                return "swapped-via-ssw-tell"
+                            on error e3
+                                return "all-failed: e1=" & e1 & " e2=" & e2 & " e3=" & e3
+                            end try
+                        end try
+                    end try
+                else
+                    -- No presenter view window — try direct app command anyway
+                    try
+                        swap displays
+                        return "swapped-direct-no-pvw"
+                    on error e4
+                        return "no-pvw + direct-failed: " & e4
+                    end try
+                end if
+            on error outerErr
+                return "outer:" & outerErr
             end try
         end tell
         """
