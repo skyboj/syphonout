@@ -279,16 +279,26 @@ enum MenuBuilder {
         ])
 
         if output.isMirrored {
-            // Overlay "⌀ Mirrored" text on the dark background
-            let label = NSTextField(labelWithString: "⌀  Mirrored")
-            label.font = .systemFont(ofSize: 12, weight: .medium)
-            label.textColor = .tertiaryLabelColor
-            label.alignment = .center
-            label.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(label)
+            // Mirrored slave: capture via the master display so we show what's
+            // actually on screen. Overlay a small badge so the user knows it's mirrored.
+            let masterID = CGDisplayMirrorsDisplay(output.displayId)
+            let captureID = (masterID != kCGNullDirectDisplay) ? masterID : output.displayId
+            if let cgImage = CGDisplayCreateImage(captureID) {
+                imageView.image = NSImage(cgImage: cgImage, size: .zero)
+            }
+            // "⌀ Mirrored" badge — small, bottom-right corner
+            let badge = NSTextField(labelWithString: "⌀ Mirrored")
+            badge.font = .systemFont(ofSize: 10, weight: .medium)
+            badge.textColor = .white
+            badge.backgroundColor = NSColor(white: 0, alpha: 0.55)
+            badge.drawsBackground = true
+            badge.isBezeled = false
+            badge.alignment = .center
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(badge)
             NSLayoutConstraint.activate([
-                label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                badge.trailingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: -4),
+                badge.bottomAnchor.constraint(equalTo: imageView.bottomAnchor, constant: -4),
             ])
         } else if let cgImage = CGDisplayCreateImage(output.displayId) {
             imageView.image = NSImage(cgImage: cgImage, size: .zero)

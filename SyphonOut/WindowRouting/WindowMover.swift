@@ -292,7 +292,7 @@ enum WindowMover {
             return axWin
         }
 
-        // ── Pass 2: title-only fallback (handles fullscreen / wrong AX origin) ──
+        // ── Pass 2: exact title fallback ─────────────────────────────────────
         guard !info.title.isEmpty else { return nil }
         for axWin in windows {
             var rawTitle: CFTypeRef?
@@ -301,10 +301,44 @@ enum WindowMover {
                   axTitle == info.title
             else { continue }
             AppLog.shared.info(
-                "findAXWindow: frame match failed, found '\(info.title)' via title fallback",
+                "findAXWindow: found '\(info.title)' via exact-title fallback",
                 category: "WindowMover"
             )
             return axWin
+        }
+
+        // ── Pass 3: lenient title prefix (handles em-dash variants, path differences) ──
+        // SCWindow titles and AX titles can differ slightly (different Unicode dash,
+        // path abbreviation, etc.). Match on the first 30 chars of the shorter title.
+        let infoPrefix = String(info.title.prefix(30)).lowercased()
+        for axWin in windows {
+            var rawTitle: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(axWin, kAXTitleAttribute as CFString, &rawTitle) == .success,
+                  let axTitle = rawTitle as? String, !axTitle.isEmpty
+            else { continue }
+            let axPrefix = String(axTitle.prefix(30)).lowercased()
+            if axPrefix == infoPrefix || axTitle.lowercased().contains(infoPrefix) || infoPrefix.contains(axPrefix) {
+                AppLog.shared.info(
+                    "findAXWindow: found via lenient-prefix match (AX='\(axTitle)' vs SC='\(info.title)')",
+                    category: "WindowMover"
+                )
+                return axWin
+            }
+        }
+
+        // ── Pass 4: single-candidate last resort ──────────────────────────────
+        // If the list has exactly one window and we exhausted all matching strategies,
+        // log the mismatch and return it anyway — it must be the window we want.
+        if windows.count == 1 {
+            var rawTitle: CFTypeRef?
+            let axTitle = AXUIElementCopyAttributeValue(windows[0], kAXTitleAttribute as CFString, &rawTitle) == .success
+                ? (rawTitle as? String ?? "<no title>")
+                : "<unreadable>"
+            AppLog.shared.warn(
+                "findAXWindow: single candidate, using it despite title mismatch (AX='\(axTitle)' vs SC='\(info.title)')",
+                category: "WindowMover"
+            )
+            return windows[0]
         }
 
         return nil

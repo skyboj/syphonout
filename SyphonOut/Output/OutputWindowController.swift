@@ -37,13 +37,36 @@ final class OutputWindowController {
         return !inScreens && CGDisplayIsOnline(displayId) != 0
     }
 
-    /// Human-readable name for `displayId` using the screen's localizedName as the default.
+    /// Cache of display names by unit number, populated by AppDelegate before
+    /// mirrors are applied. Survives CGDirectDisplayID reassignment on mirror creation.
+    static var displayNameByUnit: [UInt32: String] = [:]
+
+    /// Human-readable name for `displayId`.
+    /// Priority: user alias → live NSScreen → unit-number cache (mirrored) → generic fallback.
     static func screenName(for displayId: CGDirectDisplayID) -> String {
         if let alias = PreferencesStore.shared.displayAlias(for: displayId) { return alias }
         if let screen = NSScreen.screens.first(where: {
             $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == displayId
-        }) { return screen.localizedName }
-        return "Display \(CGDisplayUnitNumber(displayId))"
+        }) {
+            // Also keep the cache fresh while the display is live.
+            displayNameByUnit[CGDisplayUnitNumber(displayId)] = screen.localizedName
+            return screen.localizedName
+        }
+        // Mirrored / off-screen display — look up the cached name by unit number.
+        let unit = CGDisplayUnitNumber(displayId)
+        if let cached = displayNameByUnit[unit] { return cached }
+        return "Display \(unit)"
+    }
+
+    /// Seed the name cache from the current NSScreen list. Call this at launch and
+    /// on every screen-change event so names survive future mirror operations.
+    static func seedNameCache() {
+        for screen in NSScreen.screens {
+            guard let displayId = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            else { continue }
+            displayNameByUnit[CGDisplayUnitNumber(displayId)] = screen.localizedName
+        }
     }
 
     init(display: CGDirectDisplayID) {

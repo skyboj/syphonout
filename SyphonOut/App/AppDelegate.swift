@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ms = PreferencesStore.shared.crossfadeDuration * 1000.0
         syphonout_set_crossfade_duration_ms(ms)
 
+        // 4. Seed display name cache BEFORE creating controllers so mirrored
+        //    displays that appear during init already have names cached.
+        OutputWindowController.seedNameCache()
+
         // 4. One OutputWindowController per active display
         for screen in NSScreen.screens {
             guard let displayId = screen.deviceDescription[
@@ -163,6 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Screen change handling
 
     private func handleScreenChange() {
+        // Refresh name cache first — before mirrors change the NSScreen list.
+        OutputWindowController.seedNameCache()
+
         let currentIds = Set(outputs.map { $0.displayId })
         let liveIds: Set<CGDirectDisplayID> = Set(
             NSScreen.screens.compactMap {

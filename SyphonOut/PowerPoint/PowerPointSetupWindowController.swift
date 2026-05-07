@@ -428,11 +428,14 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
             } else {
                 AppLog.shared.warn(
-                    "PPT watcher: Slide Show on wrong display — trying window move to \(targetScreen.localizedName)",
+                    "PPT watcher: Slide Show on wrong display — restarting via AppleScript on \(targetScreen.localizedName)",
                     category: "PPTSetup"
                 )
-                WindowMover.move(slideShowWindow, to: targetScreen, resize: true, fullscreen: false)
-                self.setStatus("↩ Slide Show moved → \(targetScreen.localizedName)")
+                // AX window moves are unreliable for PPT fullscreen. Instead, stop the
+                // current slide show and let PPT re-open it on the correct monitor
+                // (already configured via |slide show monitor| earlier).
+                self.restartSlideShowOnCorrectMonitor()
+                self.setStatus("↩ Restarting Slide Show → \(targetScreen.localizedName)")
             }
             self.stopSlideShowWatcher()
         }
@@ -445,6 +448,43 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         slideShowWatcher?.stop()
         slideShowWatcher  = nil
         watchTargetDisplayID = nil
+    }
+
+    /// Stops the running PPT Slide Show and immediately restarts it so macOS
+    /// places it on the monitor configured by |slide show monitor|.
+    private func restartSlideShowOnCorrectMonitor() {
+        let source = """
+        tell application "Microsoft PowerPoint"
+            try
+                if (count of presentations) = 0 then return "no-presentation"
+                set ap to active presentation
+                -- Stop any running slide show
+                try
+                    set ssw to slide show window of ap
+                    end show ssw
+                end try
+                -- Small pause for the window to close
+                delay 0.4
+                -- Restart on the configured monitor
+                run slide show (slide show settings of ap)
+                return "restarted"
+            on error e
+                return "error:" & e
+            end try
+        end tell
+        """
+        DispatchQueue.global(qos: .userInitiated).async {
+            var errDict: NSDictionary?
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&errDict)
+            DispatchQueue.main.async {
+                if let e = errDict {
+                    let msg = e["NSAppleScriptErrorMessage"] as? String ?? "\(e)"
+                    AppLog.shared.error("PPT restart error: \(msg)", category: "PPTSetup")
+                } else {
+                    AppLog.shared.info("PPT restart result: \(result?.stringValue ?? "nil")", category: "PPTSetup")
+                }
+            }
+        }
     }
 
     // MARK: - PowerPoint AppleScript
