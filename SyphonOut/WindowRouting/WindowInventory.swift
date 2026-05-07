@@ -53,10 +53,13 @@ final class WindowInventory {
 
     // MARK: - Lifecycle
 
-    func start() {
+    func start(interval: TimeInterval = 2.0) {
         guard refreshTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: .seconds(2), leeway: .milliseconds(100))
+        let ms = Int(interval * 1000)
+        timer.schedule(deadline: .now(),
+                       repeating: .milliseconds(ms),
+                       leeway: .milliseconds(max(50, ms / 10)))
         timer.setEventHandler { [weak self] in self?.refresh(force: false) }
         timer.resume()
         refreshTimer = timer

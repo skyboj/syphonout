@@ -78,6 +78,50 @@ enum WindowMover {
             return .success
         }
 
+        // ── Check whether the window is currently in native macOS fullscreen ──
+        // AX silently ignores position/size changes on fullscreen windows.
+        // If AXFullScreen == true we must: exit fullscreen → wait → move → re-enter.
+        var rawFS: CFTypeRef?
+        let isNativeFullscreen =
+            AXUIElementCopyAttributeValue(axWindow, "AXFullScreen" as CFString, &rawFS) == .success
+            && (rawFS as? Bool) == true
+
+        if isNativeFullscreen {
+            AppLog.shared.info(
+                "move: window '\(window.title)' is in native fullscreen — exiting FS, moving, re-entering",
+                category: "WindowMover"
+            )
+            // Step 1: Exit fullscreen
+            AXUIElementSetAttributeValue(axWindow, "AXFullScreen" as CFString, kCFBooleanFalse)
+
+            // Step 2: After the exit animation, move to the target screen
+            let targetScreen = screen
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                let ph = NSScreen.screens.first?.frame.height ?? 0
+                var pt = CGPoint(x: targetScreen.frame.minX,
+                                 y: ph - targetScreen.frame.maxY)
+                if let posVal = AXValueCreate(.cgPoint, &pt) {
+                    AXUIElementSetAttributeValue(axWindow, kAXPositionAttribute as CFString, posVal)
+                }
+                if resize {
+                    var sz = targetScreen.frame.size
+                    if let szVal = AXValueCreate(.cgSize, &sz) {
+                        AXUIElementSetAttributeValue(axWindow, kAXSizeAttribute as CFString, szVal)
+                    }
+                }
+                // Step 3: Re-enter fullscreen on the new screen
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    enterFullscreen(axWindow)
+                    AppLog.shared.info(
+                        "move: re-entered fullscreen on '\(targetScreen.localizedName)'",
+                        category: "WindowMover"
+                    )
+                }
+            }
+            return .success
+        }
+
+        // ── Normal (non-fullscreen) move ──────────────────────────────────
         // Determine whether to resize:
         // • explicit resize: always fill destination
         // • auto: fill destination only if window is already filling its source screen

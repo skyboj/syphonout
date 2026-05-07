@@ -351,7 +351,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     private func startSlideShowWatcher(targetDisplayID: CGDirectDisplayID) {
         let watcher = WindowInventory()
-        watcher.onUpdate = { [weak self] windows in
+        watcher.onUpdate = { [weak self] (windows: [WindowInfo]) in
             guard let self else { return }
             guard let slideShowWindow = windows.first(where: {
                 $0.appName.localizedCaseInsensitiveContains("PowerPoint") &&
@@ -372,7 +372,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
             self.stopSlideShowWatcher()
         }
-        watcher.start()
+        // Fast polling: catch the window before PPT enters fullscreen mode.
+        watcher.start(interval: 0.5)
         slideShowWatcher = watcher
     }
 
