@@ -269,7 +269,9 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     func windowWillClose(_ notification: Notification) {
         stopDisplayRefreshTimer()
-        stopSlideShowWatcher()
+        // Do NOT stop the slide show watcher here — it must survive window close so
+        // the user doesn't have to keep this window open during the presentation.
+        // The watcher stops itself once the Slide Show is confirmed on the right display.
     }
 
     // MARK: - Apply
@@ -438,9 +440,10 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                 self.setStatus("✓ Slide Show → \(targetScreen.localizedName)")
                 self.stopSlideShowWatcher()
             } else {
-                AppLog.shared.warn("PPT watcher: Slide Show on wrong display — will keep watching for correct placement", category: "PPTSetup")
-                self.setStatus("⏳ Waiting for Slide Show on \(targetScreen.localizedName)…")
-                // Don't stop — keep watching in case PPT moves it after initial placement.
+                AppLog.shared.warn("PPT watcher: Slide Show on WRONG display — dumping PPT settings + restarting", category: "PPTSetup")
+                self.setStatus("↩ Restarting Slide Show on \(targetScreen.localizedName)…")
+                self.dumpPPTSettingsAndRestart()
+                self.stopSlideShowWatcher()
             }
         }
         // Fast polling: catch PPT before it commits to fullscreen on wrong display.
@@ -529,6 +532,39 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         end tell
         """
         AppLog.shared.info("PPT AS: swapping displays", category: "PPTSetup")
+        runAppleScript(source, category: "PPTSetup")
+    }
+
+    /// Logs all properties of PPT's slide show settings (diagnostic) then
+    /// stops and restarts the slide show so PPT re-picks the display.
+    /// With only one external display visible after mirrors, the restarted
+    /// show MUST go to that external display (macOS + PPT convention).
+    private func dumpPPTSettingsAndRestart() {
+        let source = """
+        tell application "Microsoft PowerPoint"
+            try
+                if (count of presentations) = 0 then return "no-presentation"
+                set sss to slide show settings of active presentation
+                -- Dump all known properties for diagnostics
+                set propLog to "showType=" & (show type of sss as string) & \\
+                    " withPresenter=" & (show with presenter of sss as string) & \\
+                    " withAnimation=" & (show with animation of sss as string)
+                -- Restart slide show so PPT re-evaluates which display to use.
+                -- With only one external display (after SyphonOut mirrors applied),
+                -- PPT will place the Slide Show there automatically.
+                try
+                    set ssw to slide show window of ap
+                    end show ssw
+                end try
+                delay 0.5
+                run slide show sss
+                return "restarted | " & propLog
+            on error e
+                return "error:" & e
+            end try
+        end tell
+        """
+        AppLog.shared.info("PPT: dumping settings + restarting slide show", category: "PPTSetup")
         runAppleScript(source, category: "PPTSetup")
     }
 
