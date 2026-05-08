@@ -40,8 +40,27 @@ final class OutputWindowController {
     }
 
     /// Cache of display names by unit number, populated by AppDelegate before
-    /// mirrors are applied. Survives CGDirectDisplayID reassignment on mirror creation.
-    static var displayNameByUnit: [UInt32: String] = [:]
+    /// mirrors are applied. Survives CGDirectDisplayID reassignment on mirror creation
+    /// and process restarts (persisted to UserDefaults).
+    static var displayNameByUnit: [UInt32: String] = loadPersistedDisplayNames() {
+        didSet { persistDisplayNames() }
+    }
+
+    private static let displayNamesDefaultsKey = "OutputWindowController.displayNameByUnit"
+
+    private static func loadPersistedDisplayNames() -> [UInt32: String] {
+        guard let raw = UserDefaults.standard.dictionary(forKey: displayNamesDefaultsKey) as? [String: String] else { return [:] }
+        var out: [UInt32: String] = [:]
+        for (k, v) in raw {
+            if let u = UInt32(k) { out[u] = v }
+        }
+        return out
+    }
+
+    private static func persistDisplayNames() {
+        let raw = Dictionary(uniqueKeysWithValues: displayNameByUnit.map { (String($0.key), $0.value) })
+        UserDefaults.standard.set(raw, forKey: displayNamesDefaultsKey)
+    }
 
     /// Human-readable name for `displayId`.
     /// Priority: user alias → live NSScreen → unit-number cache → IOKit → generic fallback.
