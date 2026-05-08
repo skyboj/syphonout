@@ -1,6 +1,35 @@
 import AppKit
 import ApplicationServices
 
+// MARK: - Private CGS / AX bridge for force-resize
+// These symbols are undocumented but stable since 10.6. Resolved at runtime via
+// dlsym since the linker can't see them on modern macOS .tbd files.
+
+private typealias CGSConnectionID = UInt32
+
+@_silgen_name("_AXUIElementGetWindow")
+private func _AXUIElementGetWindow(_ element: AXUIElement,
+                                   _ window: UnsafeMutablePointer<CGWindowID>) -> AXError
+
+private typealias CGSMainConnectionIDFn = @convention(c) () -> CGSConnectionID
+private typealias CGSSetWindowBoundsFn  = @convention(c) (CGSConnectionID, CGWindowID, UnsafePointer<CGRect>) -> OSStatus
+private typealias CGSMoveWindowFn       = @convention(c) (CGSConnectionID, CGWindowID, UnsafePointer<CGPoint>) -> OSStatus
+
+private enum CGSPrivate {
+    static let main: CGSMainConnectionIDFn? = {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGSMainConnectionID") else { return nil }
+        return unsafeBitCast(sym, to: CGSMainConnectionIDFn.self)
+    }()
+    static let setBounds: CGSSetWindowBoundsFn? = {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGSSetWindowBounds") else { return nil }
+        return unsafeBitCast(sym, to: CGSSetWindowBoundsFn.self)
+    }()
+    static let moveWindow: CGSMoveWindowFn? = {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGSMoveWindow") else { return nil }
+        return unsafeBitCast(sym, to: CGSMoveWindowFn.self)
+    }()
+}
+
 /// PowerPoint Presentation Setup panel.
 ///
 /// Shows a live snapshot of every physically-connected display (including
@@ -559,67 +588,63 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         guard let posValue  = AXValueCreate(.cgPoint, &position),
               let sizeValue = AXValueCreate(.cgSize,  &size) else { return }
 
-        let posErr  = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, posValue)
-        let sizeErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute    as CFString, sizeValue)
-
-        // Try AXFrame as a single CGRect — some apps allow frame-set even when they
-        // block AXSize. Rect must be in Quartz coords (top-left origin).
-        var frame  = CGRect(origin: position, size: size)
-        var frameErr: AXError = .failure
-        if let frameValue = AXValueCreate(AXValueType(rawValue: kAXValueCGRectType)!, &frame) {
-            frameErr = AXUIElementSetAttributeValue(slideShowWin, "AXFrame" as CFString, frameValue)
-        }
+        let posErr = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, posValue)
+        let sizeErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute as CFString, sizeValue)
 
         AppLog.shared.info(
-            "PPT teleport: Slide Show → \(targetScreen.localizedName) Quartz(\(Int(position.x)),\(Int(position.y))) \(Int(size.width))×\(Int(size.height))  posErr=\(posErr.rawValue) sizeErr=\(sizeErr.rawValue) frameErr=\(frameErr.rawValue)",
+            "PPT teleport: Slide Show → \(targetScreen.localizedName) Quartz(\(Int(position.x)),\(Int(position.y))) \(Int(size.width))×\(Int(size.height))  posErr=\(posErr.rawValue) sizeErr=\(sizeErr.rawValue)",
             category: "PPTSetup"
         )
 
-        // Schedule retries — PPT may release the size lock once swap animation settles.
-        // Try at 0.5s, 1.0s, 2.0s, 3.5s after teleport.
-        for delay in [0.5, 1.0, 2.0, 3.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.retryResizeSlideShow(slideShowWin: slideShowWin,
-                                           position: position, size: size,
-                                           attempt: delay)
-            }
-        }
+        // PPT blocks AXSize on Slide Show (-25200) and doesn't expose AXFrame (-25205).
+        // Bypass at the WindowServer level via private CGS API.
+        forceResizeViaCGS(axWindow: slideShowWin, frame: CGRect(origin: position, size: size))
     }
 
-    /// Retry kAXSizeAttribute (and AXFrame) on the Slide Show window after teleport.
-    /// PPT initially blocks size changes during/after the swap animation, but may
-    /// release the lock once internal state settles.
-    private func retryResizeSlideShow(slideShowWin: AXUIElement,
-                                      position: CGPoint, size: CGSize,
-                                      attempt: Double) {
-        // First check current size — if already correct, skip.
-        var rawSize: CFTypeRef?
-        if AXUIElementCopyAttributeValue(slideShowWin, kAXSizeAttribute as CFString, &rawSize) == .success,
-           let cf = rawSize {
-            var current = CGSize.zero
-            AXValueGetValue(cf as! AXValue, .cgSize, &current)
-            if abs(current.width - size.width) < 2 && abs(current.height - size.height) < 2 {
-                AppLog.shared.info("PPT resize retry @\(attempt)s: already correct \(Int(current.width))×\(Int(current.height))", category: "PPTSetup")
-                return
-            }
+    /// Force-resizes a window at the WindowServer level by bridging AXUIElement →
+    /// CGWindowID → CGSSetWindowBounds. Used as last-resort when the app blocks
+    /// AXSize / AXFrame (e.g. PowerPoint Slide Show window).
+    private func forceResizeViaCGS(axWindow: AXUIElement, frame: CGRect) {
+        var wid: CGWindowID = 0
+        let getErr = _AXUIElementGetWindow(axWindow, &wid)
+        guard getErr == .success, wid != 0 else {
+            AppLog.shared.warn("CGS resize: _AXUIElementGetWindow failed err=\(getErr.rawValue) wid=\(wid)", category: "PPTSetup")
+            return
         }
 
-        var sz   = size
-        var pos  = position
-        var rect = CGRect(origin: pos, size: sz)
-        var sErr: AXError = .failure
-        var pErr: AXError = .failure
-        var fErr: AXError = .failure
-        if let v = AXValueCreate(.cgSize,  &sz)   { sErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute    as CFString, v) }
-        if let v = AXValueCreate(.cgPoint, &pos)  { pErr = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, v) }
-        if let v = AXValueCreate(AXValueType(rawValue: kAXValueCGRectType)!, &rect) {
-            fErr = AXUIElementSetAttributeValue(slideShowWin, "AXFrame" as CFString, v)
+        guard let mainFn = CGSPrivate.main, let setBoundsFn = CGSPrivate.setBounds else {
+            AppLog.shared.warn("CGS resize: private symbols unavailable on this macOS", category: "PPTSetup")
+            return
         }
-
+        let cid = mainFn()
+        var rect = frame
+        let status = withUnsafePointer(to: &rect) { setBoundsFn(cid, wid, $0) }
         AppLog.shared.info(
-            "PPT resize retry @\(attempt)s: posErr=\(pErr.rawValue) sizeErr=\(sErr.rawValue) frameErr=\(fErr.rawValue)",
+            "CGS resize: wid=\(wid) → \(Int(frame.origin.x)),\(Int(frame.origin.y)) \(Int(frame.size.width))×\(Int(frame.size.height)) status=\(status)",
             category: "PPTSetup"
         )
+
+        // Some macOS versions ignore CGSSetWindowBounds for position; nudge with CGSMoveWindow too.
+        if let moveFn = CGSPrivate.moveWindow {
+            var origin = frame.origin
+            _ = withUnsafePointer(to: &origin) { moveFn(cid, wid, $0) }
+        }
+
+        // Verify after a moment.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            var raw: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axWindow, kAXSizeAttribute as CFString, &raw) == .success,
+               let cf = raw {
+                var current = CGSize.zero
+                AXValueGetValue(cf as! AXValue, .cgSize, &current)
+                let ok = abs(current.width - frame.width) < 2 && abs(current.height - frame.height) < 2
+                AppLog.shared.info(
+                    "CGS resize verify: window now \(Int(current.width))×\(Int(current.height)) \(ok ? "✓" : "✗")",
+                    category: "PPTSetup"
+                )
+            }
+        }
     }
 
     // MARK: - Slide show restart
