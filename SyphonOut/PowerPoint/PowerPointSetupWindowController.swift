@@ -562,8 +562,62 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         let posErr  = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, posValue)
         let sizeErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute    as CFString, sizeValue)
 
+        // Try AXFrame as a single CGRect — some apps allow frame-set even when they
+        // block AXSize. Rect must be in Quartz coords (top-left origin).
+        var frame  = CGRect(origin: position, size: size)
+        var frameErr: AXError = .failure
+        if let frameValue = AXValueCreate(AXValueType(rawValue: kAXValueCGRectType)!, &frame) {
+            frameErr = AXUIElementSetAttributeValue(slideShowWin, "AXFrame" as CFString, frameValue)
+        }
+
         AppLog.shared.info(
-            "PPT teleport: Slide Show → \(targetScreen.localizedName) Quartz(\(Int(position.x)),\(Int(position.y))) \(Int(size.width))×\(Int(size.height))  posErr=\(posErr.rawValue) sizeErr=\(sizeErr.rawValue)",
+            "PPT teleport: Slide Show → \(targetScreen.localizedName) Quartz(\(Int(position.x)),\(Int(position.y))) \(Int(size.width))×\(Int(size.height))  posErr=\(posErr.rawValue) sizeErr=\(sizeErr.rawValue) frameErr=\(frameErr.rawValue)",
+            category: "PPTSetup"
+        )
+
+        // Schedule retries — PPT may release the size lock once swap animation settles.
+        // Try at 0.5s, 1.0s, 2.0s, 3.5s after teleport.
+        for delay in [0.5, 1.0, 2.0, 3.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.retryResizeSlideShow(slideShowWin: slideShowWin,
+                                           position: position, size: size,
+                                           attempt: delay)
+            }
+        }
+    }
+
+    /// Retry kAXSizeAttribute (and AXFrame) on the Slide Show window after teleport.
+    /// PPT initially blocks size changes during/after the swap animation, but may
+    /// release the lock once internal state settles.
+    private func retryResizeSlideShow(slideShowWin: AXUIElement,
+                                      position: CGPoint, size: CGSize,
+                                      attempt: Double) {
+        // First check current size — if already correct, skip.
+        var rawSize: CFTypeRef?
+        if AXUIElementCopyAttributeValue(slideShowWin, kAXSizeAttribute as CFString, &rawSize) == .success,
+           let cf = rawSize {
+            var current = CGSize.zero
+            AXValueGetValue(cf as! AXValue, .cgSize, &current)
+            if abs(current.width - size.width) < 2 && abs(current.height - size.height) < 2 {
+                AppLog.shared.info("PPT resize retry @\(attempt)s: already correct \(Int(current.width))×\(Int(current.height))", category: "PPTSetup")
+                return
+            }
+        }
+
+        var sz   = size
+        var pos  = position
+        var rect = CGRect(origin: pos, size: sz)
+        var sErr: AXError = .failure
+        var pErr: AXError = .failure
+        var fErr: AXError = .failure
+        if let v = AXValueCreate(.cgSize,  &sz)   { sErr = AXUIElementSetAttributeValue(slideShowWin, kAXSizeAttribute    as CFString, v) }
+        if let v = AXValueCreate(.cgPoint, &pos)  { pErr = AXUIElementSetAttributeValue(slideShowWin, kAXPositionAttribute as CFString, v) }
+        if let v = AXValueCreate(AXValueType(rawValue: kAXValueCGRectType)!, &rect) {
+            fErr = AXUIElementSetAttributeValue(slideShowWin, "AXFrame" as CFString, v)
+        }
+
+        AppLog.shared.info(
+            "PPT resize retry @\(attempt)s: posErr=\(pErr.rawValue) sizeErr=\(sErr.rawValue) frameErr=\(fErr.rawValue)",
             category: "PPTSetup"
         )
     }
@@ -610,8 +664,15 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
                     self.setStatus("✓ Slide Show → \(targetScreen.localizedName) (fullscreen)")
                 }
             } else {
-                AppLog.shared.warn("PPT fullscreen: AX fullscreen didn't stick — falling back to slide-show restart", category: "PPTSetup")
-                self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID, allowFullscreenRestart: false)
+                // AppleScript end-show + run-slide-show fails with -32192 in this state.
+                // The retry-resize ladder in teleportSlideShowToDisplay should bring the
+                // window to full size within ~4 s; just report final position to user.
+                AppLog.shared.warn("PPT fullscreen: AX fullscreen blocked by PPT — relying on resize retries", category: "PPTSetup")
+                if let targetScreen = NSScreen.screens.first(where: {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
+                }) {
+                    self.setStatus("✓ Slide Show → \(targetScreen.localizedName) (resizing…)")
+                }
             }
         }
     }
