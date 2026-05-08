@@ -201,7 +201,7 @@ enum WindowMover {
     /// Enter native macOS fullscreen for an already-located AXUIElement window.
     /// Tries AXFullScreen attribute first (most reliable); falls back to pressing
     /// the green zoom button, which in modern macOS triggers fullscreen.
-    private static func enterFullscreen(_ axWindow: AXUIElement) {
+    static func enterFullscreen(_ axWindow: AXUIElement) {
         // Attempt 1: set AXFullScreen attribute directly
         let err = AXUIElementSetAttributeValue(axWindow,
                                                "AXFullScreen" as CFString,

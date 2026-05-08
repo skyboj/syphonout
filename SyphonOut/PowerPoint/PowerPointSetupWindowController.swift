@@ -572,10 +572,48 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     /// Called when the watcher has confirmed the Slide Show reached the target
     /// display via teleport, but the window is not fullscreen (PPT blocks AX size
-    /// changes).  Ends and restarts the slide show so PPT enters proper fullscreen.
+    /// changes via kAXSizeAttribute).  Toggles native macOS fullscreen on the
+    /// Slide Show window via AXFullScreen attribute, with green-button fallback.
+    /// This avoids the risky AppleScript end-show + run-slide-show round trip.
     private func restartForFullscreen(pid: pid_t, targetDisplayID: CGDirectDisplayID) {
-        AppLog.shared.info("PPT fullscreen: restarting slide show to enter fullscreen on target display", category: "PPTSetup")
-        restartSlideShow(pid: pid, targetDisplayID: targetDisplayID, allowFullscreenRestart: false)
+        let app = AXUIElementCreateApplication(pid)
+        var rawWindows: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+              let windows = rawWindows as? [AXUIElement] else {
+            AppLog.shared.warn("PPT fullscreen: no AX windows for pid=\(pid)", category: "PPTSetup")
+            return
+        }
+
+        guard let slideShowWin = windows.first(where: {
+            var rawTitle: CFTypeRef?
+            AXUIElementCopyAttributeValue($0, kAXTitleAttribute as CFString, &rawTitle)
+            return (rawTitle as? String ?? "").localizedCaseInsensitiveContains("Slide Show")
+        }) else {
+            AppLog.shared.warn("PPT fullscreen: Slide Show AX window not found", category: "PPTSetup")
+            return
+        }
+
+        AppLog.shared.info("PPT fullscreen: entering native fullscreen on Slide Show window", category: "PPTSetup")
+        WindowMover.enterFullscreen(slideShowWin)
+
+        // Verify after a moment.  If still not fullscreen, fall back to AppleScript restart.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            var rawFS: CFTypeRef?
+            let isFS = AXUIElementCopyAttributeValue(slideShowWin, "AXFullScreen" as CFString, &rawFS) == .success
+                       && (rawFS as? Bool == true)
+            if isFS {
+                AppLog.shared.info("PPT fullscreen: ✓ window is now fullscreen", category: "PPTSetup")
+                if let targetScreen = NSScreen.screens.first(where: {
+                    ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == targetDisplayID
+                }) {
+                    self.setStatus("✓ Slide Show → \(targetScreen.localizedName) (fullscreen)")
+                }
+            } else {
+                AppLog.shared.warn("PPT fullscreen: AX fullscreen didn't stick — falling back to slide-show restart", category: "PPTSetup")
+                self.restartSlideShow(pid: pid, targetDisplayID: targetDisplayID, allowFullscreenRestart: false)
+            }
+        }
     }
 
     /// Exits the running PPT slide show (via AX fullscreen toggle + AppleScript)
