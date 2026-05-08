@@ -65,6 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 logger.info("Skipping auto-show for built-in display \(displayId) on launch")
                 continue
             }
+            // If the assigned display is currently mirroring another display,
+            // its bounds collapse onto the master's — showing the output window
+            // would put it on top of the master (e.g. MacBook).  Skip until the
+            // user breaks the mirror, after which the assignmentChanged path
+            // will pick this up.
+            let mirrorMaster = CGDisplayMirrorsDisplay(displayId)
+            guard mirrorMaster == kCGNullDirectDisplay else {
+                logger.info("Skipping auto-show for display \(displayId): mirroring \(mirrorMaster) (would land on master)")
+                continue
+            }
             outputs.first(where: { $0.displayId == displayId })?.showOutput()
         }
 

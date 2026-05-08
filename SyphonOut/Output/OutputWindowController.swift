@@ -213,6 +213,14 @@ final class OutputWindowController {
 
     /// Show the output window (call when a VD is assigned to this display).
     func showOutput() {
+        // Refuse to show on a display that's currently a mirror slave — its
+        // bounds collapse onto the master, so the output window would cover
+        // the wrong physical display (e.g. MacBook when SB220Q mirrors it).
+        let mirrorMaster = CGDisplayMirrorsDisplay(displayId)
+        if mirrorMaster != kCGNullDirectDisplay {
+            AppLog.shared.warn("showOutput refused: display=\(displayId) is mirroring \(mirrorMaster) — would land on master", category: "Output")
+            return
+        }
         window?.makeKeyAndOrderFront(nil)
         if displayLink.map({ !CVDisplayLinkIsRunning($0) }) == true {
             CVDisplayLinkStart(displayLink!)
