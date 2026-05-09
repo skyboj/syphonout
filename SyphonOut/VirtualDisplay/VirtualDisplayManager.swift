@@ -208,6 +208,10 @@ final class VirtualDisplayManager: ObservableObject {
 
     func destroyDisplay(id: String) {
         guard let index = displays.firstIndex(where: { $0.id == id }) else { return }
+        guard !displays[index].isSystemManaged else {
+            AppLog.shared.warn("destroyDisplay rejected: '\(displays[index].name)' is system-managed", category: "VDManager")
+            return
+        }
         let name = displays[index].name
         let affected = assignments.filter { $0.value == id }.map { $0.key }
         for displayId in affected {

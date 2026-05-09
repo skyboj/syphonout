@@ -159,6 +159,10 @@ final class VirtualDisplayWindowController: NSWindowController, NSWindowDelegate
         let vds = VirtualDisplayManager.shared.userDisplays
         guard row >= 0, row < vds.count else { return }
         let vd = vds[row]
+        guard !vd.isSystemManaged else {
+            AppLog.shared.info("deleteVD rejected: '\(vd.name)' is system-managed", category: "VDWindow")
+            return
+        }
         VirtualDisplayManager.shared.destroyDisplay(id: vd.id)
         tableView.reloadData()
     }
@@ -303,7 +307,15 @@ extension VirtualDisplayWindowController: NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        deleteButton.isEnabled = tableView.selectedRow >= 0
+        let row = tableView.selectedRow
+        if row >= 0 {
+            let vds = VirtualDisplayManager.shared.userDisplays
+            if row < vds.count {
+                deleteButton.isEnabled = !vds[row].isSystemManaged
+                return
+            }
+        }
+        deleteButton.isEnabled = false
     }
 
     private func sourceLabel(for vd: VirtualDisplay) -> String {
