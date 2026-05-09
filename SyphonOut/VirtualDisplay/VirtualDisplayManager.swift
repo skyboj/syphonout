@@ -13,6 +13,9 @@ struct VirtualDisplay: Identifiable, Codable {
     /// Internal VDs are created by SyphonOut itself (e.g. for PPT soft-mirror)
     /// and are hidden from user-facing UI (menus, VD window, etc.).
     var isInternal: Bool
+    /// System-managed VDs are created by SyphonOut (e.g. for PPT confidence monitor)
+    /// and are visible in the VD list but cannot be deleted by the user.
+    var isSystemManaged: Bool
 
     var mode: SyphonOutMode {
         get { SyphonOutMode(rawValue: modeRaw) }
@@ -31,7 +34,7 @@ struct VirtualDisplay: Identifiable, Codable {
         }
     }
 
-    init(id: String, name: String, width: UInt32, height: UInt32, sourceUUID: String?, modeRaw: UInt32, isInternal: Bool = false) {
+    init(id: String, name: String, width: UInt32, height: UInt32, sourceUUID: String?, modeRaw: UInt32, isInternal: Bool = false, isSystemManaged: Bool = false) {
         self.id = id
         self.name = name
         self.width = width
@@ -39,10 +42,11 @@ struct VirtualDisplay: Identifiable, Codable {
         self.sourceUUID = sourceUUID
         self.modeRaw = modeRaw
         self.isInternal = isInternal
+        self.isSystemManaged = isSystemManaged
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, width, height, sourceUUID, modeRaw, isInternal
+        case id, name, width, height, sourceUUID, modeRaw, isInternal, isSystemManaged
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +58,7 @@ struct VirtualDisplay: Identifiable, Codable {
         sourceUUID = try container.decodeIfPresent(String.self, forKey: .sourceUUID)
         modeRaw = try container.decode(UInt32.self, forKey: .modeRaw)
         isInternal = try container.decodeIfPresent(Bool.self, forKey: .isInternal) ?? false
+        isSystemManaged = try container.decodeIfPresent(Bool.self, forKey: .isSystemManaged) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -65,6 +70,7 @@ struct VirtualDisplay: Identifiable, Codable {
         try container.encodeIfPresent(sourceUUID, forKey: .sourceUUID)
         try container.encode(modeRaw, forKey: .modeRaw)
         try container.encode(isInternal, forKey: .isInternal)
+        try container.encode(isSystemManaged, forKey: .isSystemManaged)
     }
 }
 
@@ -176,7 +182,7 @@ final class VirtualDisplayManager: ObservableObject {
     }
 
     @discardableResult
-    func createDisplay(name: String? = nil, width: UInt32 = 1920, height: UInt32 = 1080, isInternal: Bool = false) -> VirtualDisplay {
+    func createDisplay(name: String? = nil, width: UInt32 = 1920, height: UInt32 = 1080, isInternal: Bool = false, isSystemManaged: Bool = false) -> VirtualDisplay {
         let uuid = UUID().uuidString
         let vd = VirtualDisplay(
             id: uuid,
@@ -185,7 +191,8 @@ final class VirtualDisplayManager: ObservableObject {
             height: height,
             sourceUUID: nil,
             modeRaw: SYPHON_OUT_MODE_SIGNAL.rawValue,
-            isInternal: isInternal
+            isInternal: isInternal,
+            isSystemManaged: isSystemManaged
         )
         displays.append(vd)
         uuid.withCString { cStr in
