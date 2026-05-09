@@ -329,36 +329,25 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
         var messages: [String] = []
 
-        // ── 1a. Remove mirrors for displays no longer assigned Speaker Notes ──
-        // If a display is currently in an OS mirror set but the user changed its
-        // role, remove the mirror so it can act independently again.
+        // ── 1. Force ALL displays to be extended (no macOS-mirror) ────────
+        // SyphonOut implements its own "soft mirror" via display capture +
+        // borderless output windows.  We must NOT use macOS-level mirroring,
+        // because PowerPoint forcibly tears mirror sets apart when slideshow
+        // starts — leaving the confidence display blank.  Forcing every
+        // assigned-role display to extended ensures our SyphonOut output can
+        // sit on top of it cleanly.
+        let _ = builtinID  // (silence unused-warning; kept for future use)
+        let _ = speakerMirrorIDs
         for displayID in displayIDs {
-            let unit = CGDisplayUnitNumber(displayID)
-            let role = rolesByUnit[unit] ?? .notUsed
-            // CGDisplayMirrorsDisplay returns the display this one mirrors, or 0.
-            if CGDisplayMirrorsDisplay(displayID) != kCGNullDirectDisplay && role != .speakerMirror {
+            if CGDisplayMirrorsDisplay(displayID) != kCGNullDirectDisplay {
                 let name = OutputWindowController.screenName(for: displayID)
-                AppLog.shared.info("PPT Setup: removing mirror on \(name) (role changed to \(role.label))", category: "PPTSetup")
+                AppLog.shared.info("PPT Setup: removing macOS mirror on \(name) — will use SyphonOut soft-mirror instead", category: "PPTSetup")
                 removeSystemMirror(for: displayID)
-                messages.append("Unmirror: \(name)")
+                messages.append("Extended: \(name)")
             }
         }
-
-        // ── 1b. Apply mirrors for Speaker Notes displays ──────────────────
-        let mirrorMasterID: CGDirectDisplayID? = builtinID ?? speakerMirrorIDs.first
-        let displaysToMirror = speakerMirrorIDs.filter { $0 != mirrorMasterID }
-
-        if displaysToMirror.isEmpty && speakerMirrorIDs.contains(where: { $0 == builtinID }) {
-            messages.append("Speaker: MacBook (no mirror needed)")
-        } else {
-            for mirrorID in displaysToMirror {
-                guard let masterID = mirrorMasterID else { continue }
-                applySystemMirror(mirrorDisplay: mirrorID, masterDisplay: masterID)
-                let mirrorName = OutputWindowController.screenName(for: mirrorID)
-                let masterName = OutputWindowController.screenName(for: masterID)
-                AppLog.shared.info("PPT Setup: system mirror \(mirrorName) ← \(masterName)", category: "PPTSetup")
-                messages.append("Mirror: \(mirrorName) ← \(masterName)")
-            }
+        if messages.isEmpty {
+            messages.append("Displays already extended")
         }
 
         // ── 2. Move Slide Show window ─────────────────────────────────────
