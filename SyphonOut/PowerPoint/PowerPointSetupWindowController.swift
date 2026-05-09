@@ -291,32 +291,43 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         // 2. Find confidence monitor display ID
         let confidenceID = displayIDs.first { rolesByUnit[CGDisplayUnitNumber($0)] == .confidenceMonitor }
 
-        // 3. Manage internal VD lifecycle
-        let internalVD = vdm.displays.first { $0.isInternal }
+        // 3. Manage confidence monitor VD lifecycle
+        let confidenceVD = vdm.displays.first { $0.isSystemManaged }
 
         if let cid = confidenceID {
-            // Create internal VD if needed
-            let vd: VirtualDisplay
-            if let existing = internalVD {
-                vd = existing
+            if displayIDs.count >= 3 {
+                // Create system-managed VD if needed
+                let vd: VirtualDisplay
+                if let existing = confidenceVD {
+                    vd = existing
+                } else {
+                    vd = vdm.createDisplay(name: "Confidence Monitor Virtual", isSystemManaged: true)
+                    AppLog.shared.info("PPT Setup: created confidence VD '\(vd.id.prefix(8))…'", category: "PPTSetup")
+                }
+                // Assign to confidence display
+                vdm.assignPhysical(displayId: cid, vdUUID: vd.id)
+                let name = OutputWindowController.screenName(for: cid)
+                AppLog.shared.info("PPT Setup: confidence VD → \(name)", category: "PPTSetup")
+                setStatus("✓ Confidence monitor: \(name)")
             } else {
-                vd = vdm.createDisplay(name: "__pptInternal", isInternal: true)
-                AppLog.shared.info("PPT Setup: created internal VD '\(vd.id.prefix(8))…' for confidence monitor", category: "PPTSetup")
+                // Fewer than 3 displays — deactivate confidence VD if it exists
+                if let existing = confidenceVD {
+                    if let assigned = vdm.assignedDisplay(for: existing.id) {
+                        vdm.unassignPhysical(displayId: assigned)
+                    }
+                    vdm.setMode(vdId: existing.id, mode: SYPHON_OUT_MODE_OFF)
+                    AppLog.shared.info("PPT Setup: confidence VD deactivated (< 3 displays)", category: "PPTSetup")
+                }
+                setStatus("✓ Confidence unavailable (< 3 displays)")
             }
-            // Assign to confidence display
-            vdm.assignPhysical(displayId: cid, vdUUID: vd.id)
-            let name = OutputWindowController.screenName(for: cid)
-            AppLog.shared.info("PPT Setup: internal VD → \(name) for confidence mirror", category: "PPTSetup")
-            setStatus("✓ Confidence monitor: \(name)")
         } else {
-            // No confidence role — remove internal VD if exists
-            if let existing = internalVD {
-                let affected = vdm.assignments.filter { $0.value == existing.id }.map(\.key)
-                for displayId in affected {
-                    vdm.unassignPhysical(displayId: displayId)
+            // No confidence role — remove system-managed VD if exists
+            if let existing = confidenceVD {
+                if let assigned = vdm.assignedDisplay(for: existing.id) {
+                    vdm.unassignPhysical(displayId: assigned)
                 }
                 vdm.destroyDisplay(id: existing.id)
-                AppLog.shared.info("PPT Setup: removed internal VD (no confidence role)", category: "PPTSetup")
+                AppLog.shared.info("PPT Setup: removed confidence VD (no confidence role)", category: "PPTSetup")
                 setStatus("✓ Roles saved (confidence monitor off)")
             } else {
                 setStatus("✓ Roles saved")
