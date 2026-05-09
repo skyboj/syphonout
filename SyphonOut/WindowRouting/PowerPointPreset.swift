@@ -1,24 +1,23 @@
 /// PowerPoint Presentation Preset
 ///
-/// When active, automatically routes PowerPoint windows to the right places:
+/// When active, watches PowerPoint windows and automatically:
 ///
-///   Slide Show  → moved to the presentation screen + native fullscreen
-///                 also captured into VD[0] for Syphon/OBS routing
+///   • Captures the Slide Show window into VD[0] for Syphon/OBS routing
+///     (no longer moves or fullscreens — user picks the slideshow display
+///      directly in PowerPoint's "Set Up Show" dialog)
 ///
-///   Presenter View → NOT moved; instead the entire MacBook built-in display
-///                    is captured into VD[1] so a confidence monitor (wired
-///                    to VD[1] via Physical Outputs) shows the speaker notes.
+///   • While a Slide Show is running, captures the MacBook built-in display
+///     into VD[1] so the confidence monitor (wired to VD[1] via Physical
+///     Outputs) shows a soft-mirror of the Presenter View. This is a
+///     SyphonOut-level mirror — macOS isn't aware of it, so PowerPoint's
+///     internal "break mirrors during slideshow" logic can't tear it down.
 ///
-/// Screen selection for Slide Show:
-///   1. If VD[0] is assigned to a physical display → that NSScreen is used.
-///   2. Fallback: first external (non-built-in) screen.
-///
-/// On PPT quit + relaunch:
-///   • Slide Show  — re-captured automatically when the new window appears.
-///   • Presenter View display capture — runs continuously; survives PPT restarts.
-///
-/// Activation also sets both target VDs to Signal mode.
-/// Deactivation stops only the captures the preset itself started.
+/// Lifecycle:
+///   • Slide Show window appears  → start window capture (Slot 0)
+///                                  → start MacBook display capture (Slot 1)
+///   • Slide Show window goes away → stop both captures
+///                                  → confidence monitor returns to native
+///   • PPT quits / relaunches      → watcher re-converges automatically
 
 import Foundation
 import os.log
@@ -88,24 +87,34 @@ final class PowerPointPreset {
     private func reconcile(_ windows: [WindowInfo]) {
         let vds = VirtualDisplayManager.shared.displays
         let ppt = windows.filter { isPowerPoint($0) }
+        let slideShowWindow = ppt.first(where: { isSlideShow($0) })
+        let slideshowActive = slideShowWindow != nil
 
-        // Slot 0: Slide Show window → fullscreen on presentation screen + capture to VD[0]
+        // Slot 0: capture the Slide Show window into VD[0] (for Syphon/OBS routing).
+        // No window-mover hack — user picks the presentation display directly in PPT.
         if let vd = vds[safe: 0] {
-            applySlideShow(ppt: ppt, vdID: vd.id)
+            applySlideShow(slideShowWindow: slideShowWindow, vdID: vd.id)
         }
 
-        // Slot 1: MacBook built-in display → capture to VD[1] (runs once, survives PPT restarts)
+        // Slot 1: soft-mirror MacBook → confidence VD ONLY while slideshow is active.
+        // When slideshow ends, stop the capture so the confidence monitor returns
+        // to its native content.
         if let vd = vds[safe: 1] {
-            applyPresenterCapture(vdID: vd.id)
+            if slideshowActive {
+                applyPresenterCapture(vdID: vd.id)
+            } else {
+                stopPresenterCapture()
+            }
         }
     }
 
     // MARK: - Slide Show slot
 
-    private func applySlideShow(ppt: [WindowInfo], vdID: String) {
-        guard let window = ppt.first(where: { isSlideShow($0) }) else {
-            if slideShowWindowID != nil {
-                AppLog.shared.info("PPT preset: Slide Show window gone — waiting for relaunch", category: "PPTPreset")
+    private func applySlideShow(slideShowWindow: WindowInfo?, vdID: String) {
+        guard let window = slideShowWindow else {
+            if let id = slideShowWindowID {
+                AppLog.shared.info("PPT preset: Slide Show window gone — stopping capture", category: "PPTPreset")
+                WindowCaptureManager.shared.stopCapture(windowID: id)
                 slideShowWindowID = nil
             }
             return
@@ -114,18 +123,15 @@ final class PowerPointPreset {
         // Already handled this window.
         guard window.id != slideShowWindowID else { return }
 
+        // If we were tracking a different window, stop that capture first.
+        if let oldID = slideShowWindowID, oldID != window.id {
+            WindowCaptureManager.shared.stopCapture(windowID: oldID)
+        }
+
         AppLog.shared.info("PPT preset: found Slide Show (wid=\(window.id)) → VD \(vdID)", category: "PPTPreset")
         slideShowWindowID = window.id
 
-        // 1. Move to presentation screen + enter native fullscreen.
-        if let screen = presentationScreen(for: vdID) {
-            AppLog.shared.info("PPT preset: moving Slide Show to \(screen.localizedName) + fullscreen", category: "PPTPreset")
-            WindowMover.move(window, to: screen, resize: false, fullscreen: true)
-        } else {
-            AppLog.shared.warn("PPT preset: no presentation screen found — skipping fullscreen move", category: "PPTPreset")
-        }
-
-        // 2. Capture window to VD[0] for Syphon/OBS routing.
+        // Capture window to VD[0] for Syphon/OBS routing.
         WindowCaptureManager.shared.startCapture(windowID: window.id, vdUUID: vdID) { [weak self] error in
             if let error {
                 AppLog.shared.error("PPT preset: Slide Show capture failed: \(error.localizedDescription)", category: "PPTPreset")
@@ -134,25 +140,10 @@ final class PowerPointPreset {
         }
     }
 
-    /// Returns the NSScreen to use for the Slide Show fullscreen.
-    /// Priority: screen that VD[0] is currently assigned to → first external screen.
-    private func presentationScreen(for vdID: String) -> NSScreen? {
-        // Prefer the screen showing VD[0]'s output (user already configured this).
-        if let screen = VirtualDisplayManager.shared.assignedScreen(for: vdID) {
-            return screen
-        }
-        // Fallback: first external (non-built-in) screen.
-        return NSScreen.screens.first { screen in
-            let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-                       as? CGDirectDisplayID ?? 0
-            return CGDisplayIsBuiltin(id) == 0
-        }
-    }
+    // MARK: - Presenter View slot (soft-mirror via display capture)
 
-    // MARK: - Presenter View slot (display capture)
-
-    /// Starts capturing the MacBook's built-in display once and keeps it running.
-    /// Survives PowerPoint restarts because it's keyed by display ID, not window ID.
+    /// Captures the MacBook's built-in display while a Slide Show is running,
+    /// so the confidence monitor shows a soft-mirror of Presenter View.
     private func applyPresenterCapture(vdID: String) {
         guard presenterDisplayID == nil else { return }   // already capturing
 
@@ -161,7 +152,7 @@ final class PowerPointPreset {
             return
         }
 
-        AppLog.shared.info("PPT preset: capturing built-in display (\(builtinID)) → VD \(vdID)", category: "PPTPreset")
+        AppLog.shared.info("PPT preset: slideshow active → start MacBook display capture (\(builtinID)) → VD \(vdID)", category: "PPTPreset")
         presenterDisplayID = builtinID
 
         WindowCaptureManager.shared.startDisplayCapture(displayID: builtinID, vdUUID: vdID) { [weak self] error in
@@ -170,6 +161,13 @@ final class PowerPointPreset {
                 self?.presenterDisplayID = nil   // allow retry
             }
         }
+    }
+
+    private func stopPresenterCapture() {
+        guard let id = presenterDisplayID else { return }
+        AppLog.shared.info("PPT preset: slideshow ended → stop MacBook display capture", category: "PPTPreset")
+        WindowCaptureManager.shared.stopDisplayCapture(displayID: id)
+        presenterDisplayID = nil
     }
 
     /// Returns the CGDirectDisplayID of the MacBook's built-in display, if present.
