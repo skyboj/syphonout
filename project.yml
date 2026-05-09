@@ -46,13 +46,8 @@ targets:
           - App/Info.plist
           - App/SyphonOut.entitlements
           - App/main.m
-          - Syphon/SyphonOut-Bridging-Header.h
+          - Bridging/SyphonOut-Bridging-Header.h
           # Deleted legacy files — excluded so xcodegen doesn't warn
-          - Syphon/SyphonBridge.h
-          - Syphon/SyphonBridge.m
-          - Syphon/SyphonClientWrapper.swift
-          - Syphon/SyphonServerDescription.swift
-          - Syphon/SyphonServerDiscovery.swift
           - Output/OutputController.swift
           - Output/OutputManager.swift
           - Output/OutputMode.swift
@@ -64,11 +59,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.syphonout.SyphonOut
         INFOPLIST_FILE: SyphonOut/App/Info.plist
         CODE_SIGN_ENTITLEMENTS: SyphonOut/App/SyphonOut.entitlements
-        SWIFT_OBJC_BRIDGING_HEADER: SyphonOut/Syphon/SyphonOut-Bridging-Header.h
-        # Library search path for libsyphonout_core.a
+        SWIFT_OBJC_BRIDGING_HEADER: SyphonOut/Bridging/SyphonOut-Bridging-Header.h
+        # Header search paths for C/ObjC bridge headers
         HEADER_SEARCH_PATHS:
           - "$(PROJECT_DIR)/SyphonOut/Bridging"   # syphonout_core.h
-          - "$(PROJECT_DIR)/SyphonOut/Syphon"     # SyphonNative.h
           - "$(PROJECT_DIR)/SyphonOut/SOLink"     # SOLinkClient.h
           - "$(inherited)"
         LIBRARY_SEARCH_PATHS:
@@ -83,10 +77,6 @@ targets:
           - "-framework IOSurface"
           - "-framework QuartzCore"
           - "$(inherited)"
-        # No Syphon.framework at compile time — loaded via dlopen at runtime
-        # Suppress OpenGL deprecation (CGLCreateContext for Syphon's internal use)
-        GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS: NO
-        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS: NO
 
     preBuildScripts:
       - name: "Build Rust core (libsyphonout_core.a)"
@@ -99,5 +89,5 @@ targets:
           echo "✅ libsyphonout_core.a copied to SyphonOut/Bridging/"
         basedOnDependencyAnalysis: false
 
-    # No framework dependencies — Syphon is dlopen'd, Metal/IOSurface linked via OTHER_LDFLAGS
+    # SOLink protocol and system frameworks linked via OTHER_LDFLAGS
     dependencies: []
