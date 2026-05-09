@@ -10,6 +10,9 @@ struct VirtualDisplay: Identifiable, Codable {
     var sourceUUID: String?
     /// Raw mode value because SyphonOutMode (C enum) is not Codable.
     var modeRaw: UInt32
+    /// Internal VDs are created by SyphonOut itself (e.g. for PPT soft-mirror)
+    /// and are hidden from user-facing UI (menus, VD window, etc.).
+    var isInternal: Bool
 
     var mode: SyphonOutMode {
         get { SyphonOutMode(rawValue: modeRaw) }
@@ -28,8 +31,40 @@ struct VirtualDisplay: Identifiable, Codable {
         }
     }
 
+    init(id: String, name: String, width: UInt32, height: UInt32, sourceUUID: String?, modeRaw: UInt32, isInternal: Bool = false) {
+        self.id = id
+        self.name = name
+        self.width = width
+        self.height = height
+        self.sourceUUID = sourceUUID
+        self.modeRaw = modeRaw
+        self.isInternal = isInternal
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id, name, width, height, sourceUUID, modeRaw
+        case id, name, width, height, sourceUUID, modeRaw, isInternal
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        width = try container.decode(UInt32.self, forKey: .width)
+        height = try container.decode(UInt32.self, forKey: .height)
+        sourceUUID = try container.decodeIfPresent(String.self, forKey: .sourceUUID)
+        modeRaw = try container.decode(UInt32.self, forKey: .modeRaw)
+        isInternal = try container.decodeIfPresent(Bool.self, forKey: .isInternal) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        try container.encodeIfPresent(sourceUUID, forKey: .sourceUUID)
+        try container.encode(modeRaw, forKey: .modeRaw)
+        try container.encode(isInternal, forKey: .isInternal)
     }
 }
 
@@ -38,6 +73,8 @@ final class VirtualDisplayManager: ObservableObject {
     static let shared = VirtualDisplayManager()
 
     @Published private(set) var displays: [VirtualDisplay] = []
+    /// Only user-visible VDs (filters out internal VDs). UI should use this.
+    var userDisplays: [VirtualDisplay] { displays.filter { !$0.isInternal } }
     /// displayId → vdUUID
     @Published private(set) var assignments: [CGDirectDisplayID: String] = [:]
 
@@ -47,6 +84,7 @@ final class VirtualDisplayManager: ObservableObject {
 
     private init() {
         load()
+        cleanupOrphanedInternalVDs()
         if displays.isEmpty {
             createDefaultDisplay()
         } else {
@@ -80,6 +118,22 @@ final class VirtualDisplayManager: ObservableObject {
                     result[CGDirectDisplayID(id)] = pair.value
                 }
             }
+        }
+    }
+
+    /// Remove internal VDs that have no physical display assignment.
+    /// These are orphans from a previous session where the confidence role was removed
+    /// but the internal VD persisted in UserDefaults.
+    private func cleanupOrphanedInternalVDs() {
+        let orphanedIds = displays.filter { $0.isInternal && !assignments.values.contains($0.id) }.map(\.id)
+        for id in orphanedIds {
+            if let index = displays.firstIndex(where: { $0.id == id }) {
+                AppLog.shared.info("VDManager cleanup: removing orphaned internal VD '\(displays[index].name)'", category: "VDManager")
+                displays.remove(at: index)
+            }
+        }
+        if !orphanedIds.isEmpty {
+            save()
         }
     }
 
@@ -122,15 +176,16 @@ final class VirtualDisplayManager: ObservableObject {
     }
 
     @discardableResult
-    func createDisplay(name: String? = nil, width: UInt32 = 1920, height: UInt32 = 1080) -> VirtualDisplay {
+    func createDisplay(name: String? = nil, width: UInt32 = 1920, height: UInt32 = 1080, isInternal: Bool = false) -> VirtualDisplay {
         let uuid = UUID().uuidString
         let vd = VirtualDisplay(
             id: uuid,
-            name: name ?? "Virtual Display \(displays.count + 1)",
+            name: name ?? (isInternal ? "__pptInternal" : "Virtual Display \(displays.count + 1)"),
             width: width,
             height: height,
             sourceUUID: nil,
-            modeRaw: SYPHON_OUT_MODE_SIGNAL.rawValue
+            modeRaw: SYPHON_OUT_MODE_SIGNAL.rawValue,
+            isInternal: isInternal
         )
         displays.append(vd)
         uuid.withCString { cStr in
