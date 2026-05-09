@@ -121,7 +121,7 @@ extension StatusBarController {
 
     // MARK: Physical output: source (routes through assigned VD)
 
-    /// Sets the Syphon source on the VD assigned to the given physical display.
+    /// Set the SOLink source on the VD assigned to the given physical display.
     @objc func togglePPTPreset(_ sender: NSMenuItem) {
         PowerPointPreset.shared.toggle()
         UserDefaults.standard.set(PowerPointPreset.shared.isActive, forKey: "pptPresetEnabled")

@@ -323,7 +323,7 @@ extension VirtualDisplayWindowController: NSTableViewDelegate {
         let servers = MenuBuilder.availableServers()
         if let s = servers.first(where: { $0.uuid == uuid }) { return s.name }
         if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
-        return "Syphon (offline)"
+        return "Unknown"
     }
 }
 

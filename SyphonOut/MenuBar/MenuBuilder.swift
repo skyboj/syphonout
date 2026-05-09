@@ -179,7 +179,7 @@ enum MenuBuilder {
         vdItem.submenu = vdMenu
         menu.addItem(vdItem)
 
-        // ── Syphon Source submenu (always present, disabled if no VD) ────
+        // ── Source submenu (always present, disabled if no VD) ────
         let sourceMenu = NSMenu()
         let hasVD = assignedVD != nil
         let noneSourceItem = NSMenuItem(
@@ -214,7 +214,7 @@ enum MenuBuilder {
             guard let vd = assignedVD, let uuid = vd.sourceUUID else { return "None" }
             if let s = servers.first(where: { $0.uuid == uuid }) { return s.name }
             if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
-            return "Syphon (offline)"
+            return "Unknown"
         }()
         let sourceItem = NSMenuItem(title: "  Source: \(currentSourceName)", action: nil, keyEquivalent: "")
         sourceItem.submenu = sourceMenu

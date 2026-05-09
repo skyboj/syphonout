@@ -19,13 +19,11 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>12.3</string>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>SyphonOut needs to control Microsoft PowerPoint to configure which display shows the slideshow.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

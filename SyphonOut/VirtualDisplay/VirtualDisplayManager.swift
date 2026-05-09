@@ -253,18 +253,14 @@ final class VirtualDisplayManager: ObservableObject {
             }
         }
 
-        // Wire the correct ObjC bridge (only one active per VD at a time)
+        // Wire the SOLink bridge (only protocol supported)
         if sourceUUID.hasPrefix("solink:") {
             let rawUUID = String(sourceUUID.dropFirst("solink:".count))
             vdId.withCString { vdC in
                 rawUUID.withCString { SOLinkClientSetServerForVD(vdC, $0) }
             }
-            vdId.withCString { SyphonNativeClearServerForVD($0) }
         } else {
-            vdId.withCString { vdC in
-                sourceUUID.withCString { SyphonNativeSetServerForVD(vdC, $0) }
-            }
-            vdId.withCString { SOLinkClientClearServerForVD($0) }
+            AppLog.shared.warn("setSource: non-SOLink source \(sourceUUID.prefix(8))… not supported", category: "VDManager")
         }
 
         save()
@@ -277,7 +273,6 @@ final class VirtualDisplayManager: ObservableObject {
         AppLog.shared.info("clearSource vd='\(vdName)'", category: "VDManager")
         vdId.withCString { vdC in
             syphonout_vd_clear_source(vdC)
-            SyphonNativeClearServerForVD(vdC)
             SOLinkClientClearServerForVD(vdC)
         }
         save()

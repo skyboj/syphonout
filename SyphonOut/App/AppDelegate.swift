@@ -17,11 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 1. Boot Rust core
         syphonout_core_init()
 
-        // 2. Load Syphon.framework at runtime and begin server discovery
-        SyphonNativeLoad()
-        SyphonNativeStartDiscovery()
-
-        // 2b. SOLink subscriber — discovers OBS obs-solink publishers
+        // 2. SOLink subscriber — discovers OBS obs-solink publishers
         SOLinkClientInit()
         SOLinkClientStartDiscovery()
 
@@ -172,7 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let obs = screenChangeObserver { NotificationCenter.default.removeObserver(obs) }
         WindowCaptureManager.shared.stopAll()
         SOLinkClientStop()
-        SyphonNativeStop()
         syphonout_core_deinit()
     }
 

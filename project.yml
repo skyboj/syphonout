@@ -2,7 +2,7 @@ name: SyphonOut
 options:
   bundleIdPrefix: com.syphonout
   deploymentTarget:
-    macOS: "12.0"
+    macOS: "12.3"
   xcodeVersion: "15"
   generateEmptyDirectories: true
 
@@ -10,7 +10,7 @@ settings:
   base:
     PRODUCT_NAME: SyphonOut
     SWIFT_VERSION: "5.9"
-    MACOSX_DEPLOYMENT_TARGET: "12.0"
+    MACOSX_DEPLOYMENT_TARGET: "12.3"
     ARCHS: "arm64 x86_64"
     ONLY_ACTIVE_ARCH: NO
     CODE_SIGN_STYLE: Manual
@@ -21,7 +21,7 @@ targets:
   SyphonOut:
     type: application
     platform: macOS
-    deploymentTarget: "12.0"
+    deploymentTarget: "12.3"
 
     info:
       path: SyphonOut/App/Info.plist
@@ -31,7 +31,7 @@ targets:
         CFBundleIdentifier: com.syphonout.SyphonOut
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
-        LSMinimumSystemVersion: "12.0"
+        LSMinimumSystemVersion: "12.3"
         NSHighResolutionCapable: true
         NSPrincipalClass: NSApplication
 

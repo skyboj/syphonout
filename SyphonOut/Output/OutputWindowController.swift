@@ -329,30 +329,6 @@ final class OutputWindowController {
         }
     }
 
-    func setServer(uuid: String) {
-        AppLog.shared.info("setServer display=\(displayId) uuid=\(uuid)", category: "Output")
-        uuid.withCString { cStr in
-            syphonout_output_set_server(displayId, cStr)
-        }
-        if uuid.hasPrefix("solink:") {
-            // SOLink server: strip prefix, open SHM, start polling IOSurfaces
-            let rawUUID = String(uuid.dropFirst("solink:".count))
-            rawUUID.withCString { SOLinkClientSetServer(displayId, $0) }
-            SyphonNativeClearServer(displayId)  // make sure Syphon is off
-        } else {
-            // Syphon server: connect via dlopen'd SyphonClient
-            uuid.withCString { SyphonNativeSetServer(displayId, $0) }
-            SOLinkClientClearServer(displayId)
-        }
-    }
-
-    func clearServer() {
-        syphonout_output_clear_server(displayId)
-        SyphonNativeClearServer(displayId)
-        SOLinkClientClearServer(displayId)
-        AppLog.shared.info("clearServer display=\(displayId)", category: "Output")
-    }
-
     func setScaleMode(_ mode: SyphonOutScaleMode) {
         syphonout_physical_set_scale_mode(displayId, mode)
         PreferencesStore.shared.setScaleMode(mode, for: displayId)

@@ -7,65 +7,62 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B8C9D0E1F2A1B2C3D4E5F6A7 /* WindowCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */; };
-		EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF00AA11BB22CC33DD44EE55 /* PowerPointPreset.swift */; };
-		F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */; };
-		A0B1C2D3E4F5A6B7C8D9E0F1 /* DisplayCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A0B1C2D3E4F5A6B7C8D9E0 /* DisplayCapture.swift */; };
-		B2C3D4E5F6A7B8C9D0E1F2A3 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */; };
-		C4D5E6F7A8B9C0D1E2F3A4B5 /* LogViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */; };
-		D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */; };
-		B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */; };
-		118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */ = {isa = PBXBuildFile; fileRef = 8C830C8152F596247813832C /* SyphonNative.m */; };
+		2291C88E66B90B5EAC97085F /* WindowRoutingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FB42CD106D4942859D2323 /* WindowRoutingWindowController.swift */; };
 		2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */; };
-		F2E1D0C9B8A7F6E5D4C3B2A1 /* VirtualDisplayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */; };
-		C5D6E7F8A9B0C1D2E3F4A5B6 /* PowerPointSetupWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C4D5E6F7A8B9C0D1E2F3A4 /* PowerPointSetupWindowController.swift */; };
 		3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */; };
-		AA99BB11CC22DD33EE44FF55 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */; };
+		3D6CDA3BD5174104A67ED710 /* PowerPointSetupWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B01641BAFC1AE36BA7EA5BB /* PowerPointSetupWindowController.swift */; };
+		3DF040817C1CE2D068E0CD39 /* LogViewerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F638C3666AFED924E3555CF /* LogViewerWindowController.swift */; };
 		45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8942F1931F1F24B069C953E1 /* PreferencesStore.swift */; };
 		4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */; };
 		5B5439D70801FD8FEC97E714 /* libsyphonout_core.a in Resources */ = {isa = PBXBuildFile; fileRef = 2903710A6525AA33741D6B84 /* libsyphonout_core.a */; };
 		615936C80098284B72BD790A /* OutputWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */; };
+		6251BDAF16EDF9D6CB8B7343 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA8EF7634C9DE0156B8D2DC /* HotkeyManager.swift */; };
 		62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */; };
+		7201AFFC5E5F26923A281D4B /* PowerPointPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57666C2779490963BA5EC12F /* PowerPointPreset.swift */; };
 		76847DE3E573320DB3654628 /* SOLinkClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 6D2E17D479C268B8723504C7 /* SOLinkClient.m */; };
+		8B1C21E7B183ACDA1C43C6D3 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2739613E0E4F37E761F0A0E9 /* PermissionManager.swift */; };
+		8DDEA493A468C2C5264996D8 /* DisplayCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48ECF5B11DB58F63C43EE5D5 /* DisplayCapture.swift */; };
+		AD0581B60396E0F7D112D29E /* WindowMover.swift in Sources */ = {isa = PBXBuildFile; fileRef = D41D832CA074498795BE38F1 /* WindowMover.swift */; };
 		BF6EE4EA0C9604908FF9FA9F /* PreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CBFFBB4A7DFAE14129F77C7 /* PreviewRenderer.swift */; };
+		C069C214F856B2BEBC0EB776 /* WindowInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 147E596132D7533F618006EC /* WindowInventory.swift */; };
+		C8D8F6BA28D10719E34DB193 /* WindowCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06A06E4C794DC08932EC897 /* WindowCaptureManager.swift */; };
 		CD22C5176CFE384DD5119A7E /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 769488A7B31024CC7CFA777C /* main.m */; };
+		CFB2B1BC944C75B3D426F66D /* WindowCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F10CD465B1A008D71B9888 /* WindowCapture.swift */; };
+		D1446D19990506D4FB519D4F /* VirtualDisplayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C5439DD5AC3E991B10894DD /* VirtualDisplayWindowController.swift */; };
 		D50C921050D13023D1306BBF /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 29CFA98667C281D9FA1D66DD /* Shaders.metal */; };
 		DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */; };
-		1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C741475E3337445283B7FC76 /* PermissionManager.swift */; };
-		27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */; };
+		F3955BB6F9026EB9F661A5A9 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76BA291DA6D45E8A39D9DEC /* AppLog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureManager.swift; sourceTree = "<group>"; };
-		FF00AA11BB22CC33DD44EE55 /* PowerPointPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerPointPreset.swift; sourceTree = "<group>"; };
-		E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCapture.swift; sourceTree = "<group>"; };
-		F1A0B1C2D3E4F5A6B7C8D9E0 /* DisplayCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCapture.swift; sourceTree = "<group>"; };
-		A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
-		B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerWindowController.swift; sourceTree = "<group>"; };
-		C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMover.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventory.swift; sourceTree = "<group>"; };
+		07F10CD465B1A008D71B9888 /* WindowCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCapture.swift; sourceTree = "<group>"; };
+		147E596132D7533F618006EC /* WindowInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowInventory.swift; sourceTree = "<group>"; };
 		17A2FEFC2A1A06F9656986BA /* OutputWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputWindowController.swift; sourceTree = "<group>"; };
+		2739613E0E4F37E761F0A0E9 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		2903710A6525AA33741D6B84 /* libsyphonout_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libsyphonout_core.a; sourceTree = "<group>"; };
 		29CFA98667C281D9FA1D66DD /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		2CA8FB145C92CDA1E80CFB1D /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		449BA8049EFF6F7C91DEAE71 /* SOLinkClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SOLinkClient.h; sourceTree = "<group>"; };
+		48ECF5B11DB58F63C43EE5D5 /* DisplayCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCapture.swift; sourceTree = "<group>"; };
 		4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
-		52880DDBD476A623D4A34DC1 /* SyphonNative.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SyphonNative.h; sourceTree = "<group>"; };
+		57666C2779490963BA5EC12F /* PowerPointPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerPointPreset.swift; sourceTree = "<group>"; };
+		5C5439DD5AC3E991B10894DD /* VirtualDisplayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayWindowController.swift; sourceTree = "<group>"; };
+		5F638C3666AFED924E3555CF /* LogViewerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewerWindowController.swift; sourceTree = "<group>"; };
+		68FB42CD106D4942859D2323 /* WindowRoutingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRoutingWindowController.swift; sourceTree = "<group>"; };
 		694070234B3BC9B07EEF882B /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
+		6B01641BAFC1AE36BA7EA5BB /* PowerPointSetupWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerPointSetupWindowController.swift; sourceTree = "<group>"; };
 		6D2E17D479C268B8723504C7 /* SOLinkClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SOLinkClient.m; sourceTree = "<group>"; };
 		769488A7B31024CC7CFA777C /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayManager.swift; sourceTree = "<group>"; };
-		E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualDisplayWindowController.swift; sourceTree = "<group>"; };
-		B3C4D5E6F7A8B9C0D1E2F3A4 /* PowerPointSetupWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerPointSetupWindowController.swift; sourceTree = "<group>"; };
 		8942F1931F1F24B069C953E1 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
-		8C830C8152F596247813832C /* SyphonNative.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SyphonNative.m; sourceTree = "<group>"; };
 		9CBFFBB4A7DFAE14129F77C7 /* PreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewRenderer.swift; sourceTree = "<group>"; };
+		BAA8EF7634C9DE0156B8D2DC /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		CA38D4E42749C2BEFF672F60 /* syphonout_core.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = syphonout_core.h; sourceTree = "<group>"; };
 		CB1856EF560E4B79BBB5E850 /* SyphonOut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SyphonOut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CED3551B5FBBE451A064D7A0 /* MenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBuilder.swift; sourceTree = "<group>"; };
-		C741475E3337445283B7FC76 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
-		2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRoutingWindowController.swift; sourceTree = "<group>"; };
+		D41D832CA074498795BE38F1 /* WindowMover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMover.swift; sourceTree = "<group>"; };
+		D76BA291DA6D45E8A39D9DEC /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		E06A06E4C794DC08932EC897 /* WindowCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -90,28 +87,35 @@
 			children = (
 				9CBFFBB4A7DFAE14129F77C7 /* PreviewRenderer.swift */,
 				7F805377B78E436A865F8929 /* VirtualDisplayManager.swift */,
-				E1F2A3B4C5D6E7F8A9B0C1D2 /* VirtualDisplayWindowController.swift */,
+				5C5439DD5AC3E991B10894DD /* VirtualDisplayWindowController.swift */,
 			);
 			path = VirtualDisplay;
+			sourceTree = "<group>";
+		};
+		1A1C9DB2FCBC1EB2E297C707 /* WindowRouting */ = {
+			isa = PBXGroup;
+			children = (
+				48ECF5B11DB58F63C43EE5D5 /* DisplayCapture.swift */,
+				2739613E0E4F37E761F0A0E9 /* PermissionManager.swift */,
+				57666C2779490963BA5EC12F /* PowerPointPreset.swift */,
+				07F10CD465B1A008D71B9888 /* WindowCapture.swift */,
+				E06A06E4C794DC08932EC897 /* WindowCaptureManager.swift */,
+				147E596132D7533F618006EC /* WindowInventory.swift */,
+				D41D832CA074498795BE38F1 /* WindowMover.swift */,
+				68FB42CD106D4942859D2323 /* WindowRoutingWindowController.swift */,
+			);
+			path = WindowRouting;
 			sourceTree = "<group>";
 		};
 		1AFA4654EE25D979AF723726 /* App */ = {
 			isa = PBXGroup;
 			children = (
 				4E6C3946D615C7E1A13D0FE4 /* AppDelegate.swift */,
-				BB00CC11DD22EE33FF445566 /* HotkeyManager.swift */,
-				A3B2C3D4E5F6A7B8C9D0E1F2 /* AppLog.swift */,
+				D76BA291DA6D45E8A39D9DEC /* AppLog.swift */,
+				BAA8EF7634C9DE0156B8D2DC /* HotkeyManager.swift */,
 				769488A7B31024CC7CFA777C /* main.m */,
 			);
 			path = App;
-			sourceTree = "<group>";
-		};
-		D6E7F8A9B0C1D2E3F4A5B6C7 /* Logging */ = {
-			isa = PBXGroup;
-			children = (
-				B5C4D5E6F7A8B9C0D1E2F3A4 /* LogViewerWindowController.swift */,
-			);
-			path = Logging;
 			sourceTree = "<group>";
 		};
 		2329919142B57BADD49FCAE6 /* Metal */ = {
@@ -130,14 +134,6 @@
 			path = Output;
 			sourceTree = "<group>";
 		};
-		D9E8F7A6B5C4D3E2F1A0B9C8 /* PowerPoint */ = {
-			isa = PBXGroup;
-			children = (
-				B3C4D5E6F7A8B9C0D1E2F3A4 /* PowerPointSetupWindowController.swift */,
-			);
-			path = PowerPoint;
-			sourceTree = "<group>";
-		};
 		378E8067EB5B4A5E2AD3EE11 /* Preferences */ = {
 			isa = PBXGroup;
 			children = (
@@ -147,13 +143,12 @@
 			path = Preferences;
 			sourceTree = "<group>";
 		};
-		5D2E395FB9D920E946F36074 /* Syphon */ = {
+		8CC1CFACD582B5E77DBE08B2 /* PowerPoint */ = {
 			isa = PBXGroup;
 			children = (
-				52880DDBD476A623D4A34DC1 /* SyphonNative.h */,
-				8C830C8152F596247813832C /* SyphonNative.m */,
+				6B01641BAFC1AE36BA7EA5BB /* PowerPointSetupWindowController.swift */,
 			);
-			path = Syphon;
+			path = PowerPoint;
 			sourceTree = "<group>";
 		};
 		8CD45E12F220F96CD9505BAB /* SOLink */ = {
@@ -172,6 +167,14 @@
 				CA38D4E42749C2BEFF672F60 /* syphonout_core.h */,
 			);
 			path = Bridging;
+			sourceTree = "<group>";
+		};
+		DBBDC34DE4FC009D802AFDD9 /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				5F638C3666AFED924E3555CF /* LogViewerWindowController.swift */,
+			);
+			path = Logging;
 			sourceTree = "<group>";
 		};
 		EDCDD3D240956B7DDA32837E /* Products */ = {
@@ -195,34 +198,18 @@
 			children = (
 				1AFA4654EE25D979AF723726 /* App */,
 				9A566F36F557814BFF1E6C7D /* Bridging */,
-				D6E7F8A9B0C1D2E3F4A5B6C7 /* Logging */,
+				DBBDC34DE4FC009D802AFDD9 /* Logging */,
 				0FCB741CD642D7C47FCAF855 /* MenuBar */,
 				2329919142B57BADD49FCAE6 /* Metal */,
 				3328D44ADC0BC3F0C889C44B /* Output */,
-				D9E8F7A6B5C4D3E2F1A0B9C8 /* PowerPoint */,
+				8CC1CFACD582B5E77DBE08B2 /* PowerPoint */,
 				378E8067EB5B4A5E2AD3EE11 /* Preferences */,
-				F3A2B5C8D9E1F2A3B4C5D6E7 /* WindowRouting */,
 				07F4CE65742967D11ADE84EF /* Resources */,
 				8CD45E12F220F96CD9505BAB /* SOLink */,
-				5D2E395FB9D920E946F36074 /* Syphon */,
 				157DB83FF460D1A14759DF7D /* VirtualDisplay */,
+				1A1C9DB2FCBC1EB2E297C707 /* WindowRouting */,
 			);
 			path = SyphonOut;
-			sourceTree = "<group>";
-		};
-		F3A2B5C8D9E1F2A3B4C5D6E7 /* WindowRouting */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4E5F6A7B8C9D0E1F2 /* WindowInventory.swift */,
-				C3D4E5F6A7B8C9D0E1F2A1B2 /* WindowMover.swift */,
-				A7B8C9D0E1F2A1B2C3D4E5F6 /* WindowCaptureManager.swift */,
-				E5F6A7B8C9D0E1F2A1B2C3D4 /* WindowCapture.swift */,
-				F1A0B1C2D3E4F5A6B7C8D9E0 /* DisplayCapture.swift */,
-				C741475E3337445283B7FC76 /* PermissionManager.swift */,
-				2A66D0D497C1421793E592E0 /* WindowRoutingWindowController.swift */,
-				FF00AA11BB22CC33DD44EE55 /* PowerPointPreset.swift */,
-			);
-			path = WindowRouting;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -235,7 +222,6 @@
 				4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */,
 				6AD4CE1683EB5ECA73F9C6FF /* Sources */,
 				76DA70469248C0146C755D88 /* Resources */,
-				AA11BB22CC33DD44EE55FF66 /* Copy to Applications */,
 			);
 			buildRules = (
 			);
@@ -293,24 +279,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		AA11BB22CC33DD44EE55FF66 /* Copy to Applications */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Copy to Applications";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "rm -rf \"/Applications/${PRODUCT_NAME}.app\"\ncp -R \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app\" \"/Applications/${PRODUCT_NAME}.app\"\n";
-		};
 		4CD9D6777841A889EE8A17AB /* Build Rust core (libsyphonout_core.a) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -338,29 +306,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				3BAC80B107CF68E585BD0728 /* AppDelegate.swift in Sources */,
-				AA99BB11CC22DD33EE44FF55 /* HotkeyManager.swift in Sources */,
+				F3955BB6F9026EB9F661A5A9 /* AppLog.swift in Sources */,
+				8DDEA493A468C2C5264996D8 /* DisplayCapture.swift in Sources */,
+				6251BDAF16EDF9D6CB8B7343 /* HotkeyManager.swift in Sources */,
+				3DF040817C1CE2D068E0CD39 /* LogViewerWindowController.swift in Sources */,
 				4C3C3B1823857AE97EAE1ED0 /* MenuBuilder.swift in Sources */,
 				615936C80098284B72BD790A /* OutputWindowController.swift in Sources */,
+				8B1C21E7B183ACDA1C43C6D3 /* PermissionManager.swift in Sources */,
+				7201AFFC5E5F26923A281D4B /* PowerPointPreset.swift in Sources */,
+				3D6CDA3BD5174104A67ED710 /* PowerPointSetupWindowController.swift in Sources */,
 				45060ECAA1AFF51EA9AD02EF /* PreferencesStore.swift in Sources */,
-				1015B4E71A134667982C3523 /* PermissionManager.swift in Sources */,
-				B2C3D4E5F6A7B8C9D0E1F2A1 /* WindowInventory.swift in Sources */,
-				D4E5F6A7B8C9D0E1F2A1B2C3 /* WindowMover.swift in Sources */,
-				B8C9D0E1F2A1B2C3D4E5F6A7 /* WindowCaptureManager.swift in Sources */,
-				A0B1C2D3E4F5A6B7C8D9E0F1 /* DisplayCapture.swift in Sources */,
-				B2C3D4E5F6A7B8C9D0E1F2A3 /* AppLog.swift in Sources */,
-				C4D5E6F7A8B9C0D1E2F3A4B5 /* LogViewerWindowController.swift in Sources */,
-EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
-				F6A7B8C9D0E1F2A1B2C3D4E5 /* WindowCapture.swift in Sources */,
-				27AA3691CA4643959576B246 /* WindowRoutingWindowController.swift in Sources */,
 				DE039BF4794555A516687F49 /* PreferencesWindowController.swift in Sources */,
 				BF6EE4EA0C9604908FF9FA9F /* PreviewRenderer.swift in Sources */,
 				76847DE3E573320DB3654628 /* SOLinkClient.m in Sources */,
 				D50C921050D13023D1306BBF /* Shaders.metal in Sources */,
 				62A618DF9E82D5EFC929551A /* StatusBarController.swift in Sources */,
-				118BFCCD716A7D115693B6E5 /* SyphonNative.m in Sources */,
 				2924341FECDA8ABA3685EC3D /* VirtualDisplayManager.swift in Sources */,
-				F2E1D0C9B8A7F6E5D4C3B2A1 /* VirtualDisplayWindowController.swift in Sources */,
-				C5D6E7F8A9B0C1D2E3F4A5B6 /* PowerPointSetupWindowController.swift in Sources */,
+				D1446D19990506D4FB519D4F /* VirtualDisplayWindowController.swift in Sources */,
+				CFB2B1BC944C75B3D426F66D /* WindowCapture.swift in Sources */,
+				C8D8F6BA28D10719E34DB193 /* WindowCaptureManager.swift in Sources */,
+				C069C214F856B2BEBC0EB776 /* WindowInventory.swift in Sources */,
+				AD0581B60396E0F7D112D29E /* WindowMover.swift in Sources */,
+				2291C88E66B90B5EAC97085F /* WindowRoutingWindowController.swift in Sources */,
 				CD22C5176CFE384DD5119A7E /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -439,13 +406,10 @@ EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = NO;
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/SyphonOut/Bridging",
-					"$(PROJECT_DIR)/SyphonOut/Syphon",
 					"$(PROJECT_DIR)/SyphonOut/SOLink",
 					"$(inherited)",
 				);
@@ -470,7 +434,7 @@ EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.syphonout.SyphonOut;
 				SDKROOT = macosx;
-				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Syphon/SyphonOut-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Bridging/SyphonOut-Bridging-Header.h";
 			};
 			name = Release;
 		};
@@ -539,13 +503,10 @@ EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = NO;
 				CODE_SIGN_ENTITLEMENTS = SyphonOut/App/SyphonOut.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/SyphonOut/Bridging",
-					"$(PROJECT_DIR)/SyphonOut/Syphon",
 					"$(PROJECT_DIR)/SyphonOut/SOLink",
 					"$(inherited)",
 				);
@@ -570,7 +531,7 @@ EE55FF00AA11BB22CC33DD44 /* PowerPointPreset.swift in Sources */,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.syphonout.SyphonOut;
 				SDKROOT = macosx;
-				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Syphon/SyphonOut-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "SyphonOut/Bridging/SyphonOut-Bridging-Header.h";
 			};
 			name = Debug;
 		};
