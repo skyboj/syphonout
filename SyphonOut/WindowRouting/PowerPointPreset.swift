@@ -49,10 +49,10 @@ final class PowerPointPreset {
         isActive = true
         AppLog.shared.info("PowerPoint preset activated", category: "PPTPreset")
 
-        // Ensure VDs are in Signal mode so output windows actually show.
-        // The confidence VD (assigned to external display) starts in
-        // BLANK_BLACK with the "CONFIDENCE / MONITOR" text until a
-        // slideshow begins.
+        // Ensure confidence VD is created and assigned
+        ensureConfidenceVD()
+
+        // Set modes: confidence VD → BLANK_BLACK (shows overlay), others → SIGNAL
         let confidenceID = confidenceVDID()
         for vd in VirtualDisplayManager.shared.displays {
             let mode = vd.id == confidenceID ? SYPHON_OUT_MODE_BLANK_BLACK : SYPHON_OUT_MODE_SIGNAL
@@ -74,12 +74,56 @@ final class PowerPointPreset {
         inventory.onUpdate = nil
 
         stopPresenterCapture()
+        destroyConfidenceVD()
+    }
 
-        // Force confidence VD to OFF to clear text overlay,
-        // even if no slideshow was running.
-        if let vdID = confidenceVDID() {
-            VirtualDisplayManager.shared.setMode(vdId: vdID, mode: SYPHON_OUT_MODE_OFF)
+    // MARK: - Confidence VD lifecycle
+
+    /// Creates and assigns the system-managed confidence VD if it doesn't exist
+    /// and the confidence display was configured by the user.
+    private func ensureConfidenceVD() {
+        let vdm = VirtualDisplayManager.shared
+
+        // Already exists — nothing to do.
+        if vdm.displays.contains(where: { $0.isSystemManaged }) { return }
+
+        // Read saved confidence display unit from Setup window.
+        guard let savedUnit = UserDefaults.standard.object(forKey: "pptConfidenceDisplayUnit") as? Int else { return }
+
+        // Need at least 3 displays (built-in + slideshow + confidence).
+        let displayIDs = allOnlineDisplayIDs()
+        guard displayIDs.count >= 3 else { return }
+
+        // Find the display that matches the saved unit number.
+        guard let confidenceDisplay = displayIDs.first(where: { CGDisplayUnitNumber($0) == UInt32(savedUnit) }) else {
+            AppLog.shared.warn("ensureConfidenceVD: confidence display (unit \(savedUnit)) not found", category: "PPTPreset")
+            return
         }
+
+        let vd = vdm.createDisplay(name: "Confidence Monitor Virtual", isSystemManaged: true)
+        vdm.assignPhysical(displayId: confidenceDisplay, vdUUID: vd.id)
+        AppLog.shared.info("ensureConfidenceVD: created '\(vd.id.prefix(8))…' → display unit \(savedUnit)", category: "PPTPreset")
+    }
+
+    /// Destroys the system-managed confidence VD.
+    private func destroyConfidenceVD() {
+        let vdm = VirtualDisplayManager.shared
+        guard let existing = vdm.displays.first(where: { $0.isSystemManaged }) else { return }
+        if let assigned = vdm.assignedDisplay(for: existing.id) {
+            vdm.unassignPhysical(displayId: assigned)
+        }
+        vdm.destroyDisplay(id: existing.id, force: true)
+        AppLog.shared.info("destroyConfidenceVD: removed '\(existing.id.prefix(8))…'", category: "PPTPreset")
+    }
+
+    /// All physically connected display IDs (active + mirrored).
+    private func allOnlineDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &count)
+        guard count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetOnlineDisplayList(count, &ids, &count)
+        return Array(ids.prefix(Int(count)))
     }
 
     // MARK: - Reconciliation (called on every inventory refresh)
@@ -100,16 +144,9 @@ final class PowerPointPreset {
         }
     }
 
-    /// Returns the UUID of the VD assigned to the first external (non-builtin)
-    /// display.  This is the VD whose output window will become our soft-mirror
-    /// target for Presenter View.
+    /// Returns the UUID of the system-managed confidence VD.
     private func confidenceVDID() -> String? {
-        for (displayID, vdUUID) in VirtualDisplayManager.shared.assignments {
-            if CGDisplayIsBuiltin(displayID) == 0 {
-                return vdUUID
-            }
-        }
-        return nil
+        VirtualDisplayManager.shared.displays.first(where: { $0.isSystemManaged })?.id
     }
 
     // MARK: - Slide Show slot
