@@ -88,6 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 6. Menu bar
         statusBarController = StatusBarController(outputs: outputs)
 
+        // 6b. Start the always-on PowerPoint watcher.
+        //     It captures the MacBook display into whichever VD is assigned to
+        //     an external display, but ONLY while a Slide Show is active.
+        //     This is the SyphonOut "soft mirror" for Presenter View.
+        PowerPointPreset.shared.activate()
+
         // 7. Show/hide output window when user assigns or unassigns a VD
         assignmentObserver = NotificationCenter.default.addObserver(
             forName: .vdAssignmentChanged,
