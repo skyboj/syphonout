@@ -103,10 +103,6 @@ void syphonout_on_new_frame_vd(const char *vd_uuid,
 // Set the crossfade duration in milliseconds.
 void syphonout_set_crossfade_duration_ms(double ms);
 
-// DEPRECATED — mirroring is now expressed by assigning multiple physical
-// outputs to the same VD. Kept as no-op for binary compatibility.
-void syphonout_set_mirror(bool _enabled, uint32_t _primary_display_id);
-
 // Register a callback invoked (on an arbitrary thread) when the server list changes.
 void syphonout_set_server_changed_callback(void (*callback)(void*), void *userdata);
 
@@ -116,14 +112,6 @@ void syphonout_get_servers(void (*callback)(const struct SyphonOutServerInfo*, u
 
 // Get the overall icon state for the menu bar.
 enum SyphonOutIcon syphonout_get_icon_state(void);
-
-// Get the signal status for a specific physical display.
-// Shims through the implicit per-display VD during transition.
-enum SyphonOutSignal syphonout_get_signal_status(uint32_t display_id);
-
-// Returns a pointer to a null-terminated server name string for a physical
-// display, or NULL. Valid until the next call for the same display_id.
-const char *syphonout_get_selected_server_name(uint32_t display_id);
 
 // Server appeared on the network.
 void syphonout_on_server_announced(const char *uuid, const char *name, const char *app_name);
@@ -135,23 +123,9 @@ void syphonout_on_server_retired(const char *uuid);
 // Operates on the implicit per-display VD.
 void syphonout_output_set_mode(uint32_t display_id, enum SyphonOutMode mode);
 
-// Legacy: assign a server to a physical output.
-// Operates on the implicit per-display VD.
-void syphonout_output_set_server(uint32_t display_id, const char *server_uuid);
-
-// Legacy: remove server assignment from a physical output.
-void syphonout_output_clear_server(uint32_t display_id);
-
 // Return the current IOSurface for a Virtual Display, with a +1 CFRetain.
 // Returns NULL if no frame has arrived yet.
 // THE CALLER MUST CFRelease the returned pointer when done.
 void *syphonout_vd_get_iosurface(const char *uuid);
-
-// Legacy: new frame keyed by display_id instead of vd_uuid.
-// Routes to the implicit VD for that display during transition.
-void syphonout_on_new_frame(uint32_t display_id,
-                            void *iosurface_ref,
-                            uint32_t width,
-                            uint32_t height);
 
 #endif  /* SYPHONOUT_CORE_H */

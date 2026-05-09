@@ -4,16 +4,13 @@
 /// PhysicalOutput = Metal-backed window for a macOS display.
 ///
 /// One VD can feed zero or more PhysicalOutputs (mirroring).
-///
-/// Backward-compat shim: legacy display_id-based FFI routes through an
-/// implicit per-display VD so Swift keeps compiling during the transition.
 
 use std::collections::HashMap;
 use std::ffi::c_void;
 
 use crate::output::PhysicalOutput;
 use crate::state::{SyphonOutIcon, SyphonOutMode, SyphonOutScaleMode, SyphonOutSignal};
-use crate::syphon::SyphonRegistry;
+use crate::registry::ServerRegistry;
 use crate::virtual_display::VirtualDisplay;
 
 pub struct SyphonOutCore {
@@ -22,7 +19,7 @@ pub struct SyphonOutCore {
     /// display_id → vd_uuid. When present, the physical output renders that VD.
     /// When absent, it falls back to the implicit per-display VD.
     pub physical_assignments: HashMap<u32, String>,
-    pub registry: SyphonRegistry,
+    pub registry: ServerRegistry,
     pub crossfade_duration_ms: f64,
 
     /// Called (on main thread) whenever the server list changes.
@@ -39,7 +36,7 @@ impl SyphonOutCore {
             virtual_displays: HashMap::new(),
             physical_outputs: HashMap::new(),
             physical_assignments: HashMap::new(),
-            registry: SyphonRegistry::default(),
+            registry: ServerRegistry::default(),
             crossfade_duration_ms: 100.0,
             server_changed_cb: None,
         }
@@ -55,16 +52,11 @@ impl SyphonOutCore {
     }
 
     pub fn vd_destroy(&mut self, uuid: &str) {
-        // Unassign any physical outputs pointing at this VD
         let to_unassign: Vec<u32> = self
-            .physical_outputs
-            .values()
-            .filter(|po| {
-                self.physical_output_vd(po.display_id)
-                    .map(|vd| vd.uuid.as_str() == uuid)
-                    .unwrap_or(false)
-            })
-            .map(|po| po.display_id)
+            .physical_assignments
+            .iter()
+            .filter(|(_, vd_uuid)| vd_uuid.as_str() == uuid)
+            .map(|(id, _)| *id)
             .collect();
         for id in to_unassign {
             self.physical_unassign(id);
@@ -139,10 +131,6 @@ impl SyphonOutCore {
         }
         self.physical_assignments.remove(&display_id);
     }
-
-    // Helper: which VD is assigned to a physical output?
-    // (For Phase 1 we store this in a side HashMap until Swift migrates.)
-    // WAIT — we haven't added the assignment HashMap. Let me add it.
 
     // ═════════════════════════════════════════════════════════════════════════
     // Render
@@ -230,25 +218,9 @@ impl SyphonOutCore {
         }
     }
 
-    pub fn signal_status(&self, display_id: u32) -> SyphonOutSignal {
-        self.physical_output_vd(display_id)
-            .map(|vd| vd.signal_status())
-            .unwrap_or(SyphonOutSignal::NoSourceSelected)
-    }
-
-    pub fn selected_server_name(&self, display_id: u32) -> Option<&str> {
-        let vd = self.physical_output_vd(display_id)?;
-        let source = vd.source_uuid.as_deref()?;
-        self.registry.server_name(source)
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
-    // Backward-compat: legacy display_id-based "implicit VD"
+    // Legacy implicit-per-display VD (for syphonout_output_set_mode)
     // ═════════════════════════════════════════════════════════════════════════
-    //
-    // While Swift is migrating, each physical output has a hidden implicit VD
-    // keyed by "__display__{id}". Old syphonout_output_set_server etc operate
-    // on this implicit VD so existing Swift code keeps compiling.
 
     fn implicit_vd_key(display_id: u32) -> String {
         format!("__display__{}", display_id)
@@ -274,24 +246,6 @@ impl SyphonOutCore {
         self.vd_set_mode(&key, mode);
     }
 
-    pub fn legacy_set_server(&mut self, display_id: u32, server_uuid: &str) {
-        self.ensure_implicit_vd(display_id);
-        let key = Self::implicit_vd_key(display_id);
-        self.vd_set_source(&key, server_uuid);
-    }
-
-    pub fn legacy_clear_server(&mut self, display_id: u32) {
-        let key = Self::implicit_vd_key(display_id);
-        self.vd_clear_source(&key);
-    }
-
-    pub fn legacy_selected_server_name(&self, display_id: u32) -> Option<&str> {
-        let key = Self::implicit_vd_key(display_id);
-        let vd = self.virtual_displays.get(&key)?;
-        let source = vd.source_uuid.as_deref()?;
-        self.registry.server_name(source)
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
     // Helpers
     // ═════════════════════════════════════════════════════════════════════════
@@ -314,22 +268,12 @@ impl SyphonOutCore {
         }
     }
 
-    /// Look up the VirtualDisplay currently assigned to a physical output.
-    fn physical_output_vd(&self, display_id: u32) -> Option<&VirtualDisplay> {
-        // 1. Check explicit assignment
-        if let Some(vd_uuid) = self.physical_assignments.get(&display_id) {
-            return self.virtual_displays.get(vd_uuid);
-        }
-        // 2. Fall back to implicit per-display VD
-        let key = Self::implicit_vd_key(display_id);
-        self.virtual_displays.get(&key)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{SyphonOutIcon, SyphonOutSignal};
+    use crate::state::SyphonOutIcon;
 
     fn make_core() -> SyphonOutCore {
         SyphonOutCore::new()
@@ -420,13 +364,5 @@ mod tests {
         c.legacy_set_mode(1, SyphonOutMode::Signal);
         let key = SyphonOutCore::implicit_vd_key(1);
         assert!(c.virtual_displays.contains_key(&key));
-    }
-
-    #[test]
-    fn legacy_server_routing() {
-        let mut c = make_core();
-        c.on_server_announced("u1".into(), "Main".into(), "OBS".into());
-        c.legacy_set_server(1, "u1");
-        assert_eq!(c.legacy_selected_server_name(1), Some("Main"));
     }
 }

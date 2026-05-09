@@ -1,28 +1,23 @@
 #![allow(clippy::missing_safety_doc)]
 // SyphonOut Core — C-compatible FFI boundary.
 // Compiled to libsyphonout_core.a and linked into the Swift app.
-//
-// Phase 1 Virtual Display refactor:
-//   New VD-centric functions: syphonout_vd_*, syphonout_physical_*, syphonout_on_new_frame_vd
-//   Legacy display_id-based functions shim through an implicit per-display VD
-//   so existing Swift keeps compiling during the transition.
 
 mod core;
 mod output;
 mod renderer;
 mod solink_publisher;
 mod state;
-mod syphon;
+mod registry;
 mod virtual_display;
 
 use std::ffi::{c_void, CStr, CString};
 use parking_lot::Mutex;
 use std::sync::OnceLock;
-use std::collections::HashMap;
 
 pub use state::{SyphonOutIcon, SyphonOutMode, SyphonOutScaleMode, SyphonOutServerInfo, SyphonOutSignal};
 
 use crate::core::SyphonOutCore;
+
 
 // ── Global state ─────────────────────────────────────────────────────────────
 
@@ -30,19 +25,6 @@ static CORE: OnceLock<Mutex<SyphonOutCore>> = OnceLock::new();
 
 fn core() -> &'static Mutex<SyphonOutCore> {
     CORE.get().expect("syphonout_core_init() not called")
-}
-
-// ── C-string caches ──────────────────────────────────────────────────────────
-
-static NAME_CACHE: OnceLock<Mutex<HashMap<u32, CString>>> = OnceLock::new();
-static NAME_CACHE_VD: OnceLock<Mutex<HashMap<String, CString>>> = OnceLock::new();
-
-fn name_cache() -> &'static Mutex<HashMap<u32, CString>> {
-    NAME_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn name_cache_vd() -> &'static Mutex<HashMap<String, CString>> {
-    NAME_CACHE_VD.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -206,13 +188,6 @@ pub extern "C" fn syphonout_set_crossfade_duration_ms(ms: f64) {
     core().lock().set_crossfade_duration_ms(ms);
 }
 
-/// DEPRECATED — mirroring is now expressed by assigning multiple physical
-/// outputs to the same VD. Kept as no-op for binary compatibility.
-#[no_mangle]
-pub extern "C" fn syphonout_set_mirror(_enabled: bool, _primary_display_id: u32) {
-    // No-op in VD architecture.
-}
-
 /// Register a callback invoked (on an arbitrary thread) when the server list changes.
 #[no_mangle]
 pub unsafe extern "C" fn syphonout_set_server_changed_callback(
@@ -268,33 +243,8 @@ pub extern "C" fn syphonout_get_icon_state() -> SyphonOutIcon {
     core().lock().icon_state()
 }
 
-/// Get the signal status for a specific physical display.
-/// Shims through the implicit per-display VD during transition.
-#[no_mangle]
-pub extern "C" fn syphonout_get_signal_status(display_id: u32) -> SyphonOutSignal {
-    core().lock().signal_status(display_id)
-}
-
-/// Returns a pointer to a null-terminated server name string for a physical
-/// display, or NULL. Valid until the next call for the same display_id.
-#[no_mangle]
-pub extern "C" fn syphonout_get_selected_server_name(
-    display_id: u32,
-) -> *const libc::c_char {
-    let c = core().lock();
-    match c.selected_server_name(display_id) {
-        Some(name) => {
-            let cstr = CString::new(name).unwrap_or_default();
-            let mut cache = name_cache().lock();
-            cache.insert(display_id, cstr);
-            cache[&display_id].as_ptr()
-        }
-        None => std::ptr::null(),
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// Syphon event callbacks — called FROM SyphonNative.m / SOLinkClient.m
+// Server event callbacks — called from SOLinkClient.m
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Server appeared on the network.
@@ -328,23 +278,6 @@ pub extern "C" fn syphonout_output_set_mode(display_id: u32, mode: SyphonOutMode
     core().lock().legacy_set_mode(display_id, mode);
 }
 
-/// Legacy: assign a server to a physical output.
-/// Operates on the implicit per-display VD.
-#[no_mangle]
-pub unsafe extern "C" fn syphonout_output_set_server(
-    display_id: u32,
-    server_uuid: *const libc::c_char,
-) {
-    let uuid = CStr::from_ptr(server_uuid).to_str().unwrap_or("");
-    core().lock().legacy_set_server(display_id, uuid);
-}
-
-/// Legacy: remove server assignment from a physical output.
-#[no_mangle]
-pub extern "C" fn syphonout_output_clear_server(display_id: u32) {
-    core().lock().legacy_clear_server(display_id);
-}
-
 /// Return the current IOSurface for a Virtual Display, with a +1 CFRetain.
 /// Returns NULL if no frame has arrived yet.
 /// THE CALLER MUST CFRelease the returned pointer when done.
@@ -356,15 +289,4 @@ pub unsafe extern "C" fn syphonout_vd_get_iosurface(
     core().lock().vd_get_iosurface(uuid)
 }
 
-/// Legacy: new frame keyed by display_id instead of vd_uuid.
-/// Routes to the implicit VD for that display during transition.
-#[no_mangle]
-pub unsafe extern "C" fn syphonout_on_new_frame(
-    display_id: u32,
-    iosurface_ref: *mut c_void,
-    width: u32,
-    height: u32,
-) {
-    let key = format!("__display__{}", display_id);
-    core().lock().on_new_frame(&key, iosurface_ref, width, height);
-}
+

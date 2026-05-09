@@ -23,6 +23,7 @@ mod test_renderer {
         pub fn end_freeze(&mut self) {}
         pub fn show_blank(&mut self, _mode: super::SyphonOutMode) {}
         pub fn update_from_iosurface(&mut self, _iosurface: *mut c_void, _width: u32, _height: u32) {}
+        pub fn set_scale_mode(&mut self, _mode: super::SyphonOutScaleMode) {}
         pub fn render_frame(&mut self) {}
     }
 }
