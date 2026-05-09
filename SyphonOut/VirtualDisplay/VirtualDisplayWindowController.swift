@@ -67,10 +67,11 @@ final class VirtualDisplayWindowController: NSWindowController, NSWindowDelegate
         tableView.target = self
 
         let cols: [(id: String, title: String, width: CGFloat)] = [
-            ("name",   "Name",       160),
-            ("mode",   "Mode",       110),
-            ("source", "Source",     160),
-            ("size",   "Resolution",  95),
+            ("name",       "Name",       160),
+            ("mode",       "Mode",       110),
+            ("source",     "Source",     160),
+            ("assignedTo", "Assigned to", 140),
+            ("size",       "Resolution",  95),
         ]
         for col in cols {
             let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(col.id))
@@ -148,17 +149,16 @@ final class VirtualDisplayWindowController: NSWindowController, NSWindowDelegate
         let vd = VirtualDisplayManager.shared.createDisplay()
         tableView.reloadData()
         // Select and start editing the new row
-        let row = VirtualDisplayManager.shared.displays.firstIndex(where: { $0.id == vd.id }) ?? 0
+        let row = VirtualDisplayManager.shared.userDisplays.firstIndex(where: { $0.id == vd.id }) ?? 0
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         tableView.scrollRowToVisible(row)
     }
 
     @objc private func deleteVD() {
         let row = tableView.selectedRow
-        guard row >= 0,
-              row < VirtualDisplayManager.shared.displays.count
-        else { return }
-        let vd = VirtualDisplayManager.shared.displays[row]
+        let vds = VirtualDisplayManager.shared.userDisplays
+        guard row >= 0, row < vds.count else { return }
+        let vd = vds[row]
         VirtualDisplayManager.shared.destroyDisplay(id: vd.id)
         tableView.reloadData()
     }
@@ -170,6 +170,35 @@ final class VirtualDisplayWindowController: NSWindowController, NSWindowDelegate
         guard col >= 0 else { return }
         tableView.editColumn(col, row: row, with: nil, select: true)
     }
+
+    // MARK: - Assigned to support
+
+    private func allPhysicalDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        CGGetOnlineDisplayList(0, nil, &count)
+        guard count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetOnlineDisplayList(count, &ids, &count)
+        return Array(ids.prefix(Int(count)))
+    }
+
+    @objc private func assignedToChanged(_ sender: NSPopUpButton) {
+        let row = sender.tag
+        let vds = VirtualDisplayManager.shared.userDisplays
+        guard row >= 0, row < vds.count else { return }
+        let vd = vds[row]
+
+        if let selectedItem = sender.selectedItem,
+           let displayId = selectedItem.representedObject as? CGDirectDisplayID {
+            VirtualDisplayManager.shared.assignPhysical(displayId: displayId, vdUUID: vd.id)
+        } else {
+            let currentAssignment = VirtualDisplayManager.shared.assignments.first { $0.value == vd.id }
+            if let (displayId, _) = currentAssignment {
+                VirtualDisplayManager.shared.unassignPhysical(displayId: displayId)
+            }
+        }
+        tableView.reloadData()
+    }
 }
 
 // MARK: - NSTableViewDataSource
@@ -177,7 +206,7 @@ final class VirtualDisplayWindowController: NSWindowController, NSWindowDelegate
 extension VirtualDisplayWindowController: NSTableViewDataSource {
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        VirtualDisplayManager.shared.displays.count
+        VirtualDisplayManager.shared.userDisplays.count
     }
 }
 
@@ -186,11 +215,16 @@ extension VirtualDisplayWindowController: NSTableViewDataSource {
 extension VirtualDisplayWindowController: NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let vds = VirtualDisplayManager.shared.displays
+        let vds = VirtualDisplayManager.shared.userDisplays
         guard row < vds.count else { return nil }
         let vd = vds[row]
 
         let colId = tableColumn?.identifier.rawValue ?? ""
+
+        if colId == "assignedTo" {
+            return makeAssignedToCell(tableView: tableView, row: row, vd: vd)
+        }
+
         let text: String
         switch colId {
         case "name":   text = vd.name
@@ -222,6 +256,52 @@ extension VirtualDisplayWindowController: NSTableViewDelegate {
         return cell
     }
 
+    private func makeAssignedToCell(tableView: NSTableView, row: Int, vd: VirtualDisplay) -> NSView? {
+        let cellId = NSUserInterfaceItemIdentifier("assignedToCell")
+        var cell = tableView.makeView(withIdentifier: cellId, owner: self) as? NSTableCellView
+        if cell == nil {
+            cell = NSTableCellView()
+            cell?.identifier = cellId
+
+            let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+            popup.bezelStyle = .rounded
+            popup.translatesAutoresizingMaskIntoConstraints = false
+            popup.target = self
+            popup.action = #selector(assignedToChanged(_:))
+            cell?.addSubview(popup)
+            if let cell {
+                NSLayoutConstraint.activate([
+                    popup.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                    popup.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                    popup.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+            }
+        }
+
+        guard let popup = cell?.subviews.compactMap({ $0 as? NSPopUpButton }).first else { return cell }
+        popup.tag = row
+
+        let displays = allPhysicalDisplayIDs()
+        let currentAssignment = VirtualDisplayManager.shared.assignments.first { $0.value == vd.id }
+
+        popup.removeAllItems()
+        popup.addItem(withTitle: "—")
+        popup.lastItem?.representedObject = nil
+
+        var selectedIndex: Int = 0
+        for (i, displayId) in displays.enumerated() {
+            let name = OutputWindowController.screenName(for: displayId)
+            popup.addItem(withTitle: name)
+            popup.lastItem?.representedObject = displayId as NSObject
+            if displayId == currentAssignment?.key {
+                selectedIndex = i + 1
+            }
+        }
+        popup.selectItem(at: selectedIndex)
+
+        return cell
+    }
+
     func tableViewSelectionDidChange(_ notification: Notification) {
         deleteButton.isEnabled = tableView.selectedRow >= 0
     }
@@ -242,7 +322,7 @@ extension VirtualDisplayWindowController: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
         let row = field.tag
-        let vds = VirtualDisplayManager.shared.displays
+        let vds = VirtualDisplayManager.shared.userDisplays
         guard row < vds.count else { return }
         let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != vds[row].name else { return }
