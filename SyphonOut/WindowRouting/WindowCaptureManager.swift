@@ -122,6 +122,37 @@ final class WindowCaptureManager {
     var capturedWindowIDs: Set<CGWindowID> {
         Set(captures.keys)
     }
+
+    // MARK: - Reverse lookup (by VD UUID)
+
+    /// Returns the window ID currently being captured for `vdUUID`, or nil.
+    func capturedWindow(for vdUUID: String) -> CGWindowID? {
+        captures.first(where: { $0.value.vdUUID == vdUUID })?.key
+    }
+
+    /// Returns the display ID currently being captured for `vdUUID`, or nil.
+    func capturedDisplay(for vdUUID: String) -> CGDirectDisplayID? {
+        displayCaptures.first(where: { $0.value.vdUUID == vdUUID })?.key
+    }
+
+    /// True if any capture (window or display) is routing to `vdUUID`.
+    func isCapturingVD(_ vdUUID: String) -> Bool {
+        capturedWindow(for: vdUUID) != nil || capturedDisplay(for: vdUUID) != nil
+    }
+
+    /// Stops any window capture for `vdUUID`.
+    func stopWindowCapture(for vdUUID: String) {
+        if let wid = capturedWindow(for: vdUUID) {
+            stopCapture(windowID: wid)
+        }
+    }
+
+    /// Stops any display capture for `vdUUID`.
+    func stopDisplayCapture(for vdUUID: String) {
+        if let did = capturedDisplay(for: vdUUID) {
+            stopDisplayCapture(displayID: did)
+        }
+    }
 }
 
 // MARK: - Notification names

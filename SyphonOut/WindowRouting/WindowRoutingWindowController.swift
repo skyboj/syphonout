@@ -448,6 +448,21 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
 
     private func beginCapture(info: WindowInfo, vdUUID: String) {
         let vdName = VirtualDisplayManager.shared.displays.first { $0.id == vdUUID }?.name ?? "?"
+        let mgr = WindowCaptureManager.shared
+
+        // Check if the VD already has a capture — if so, confirm replacement.
+        if let existingWID = mgr.capturedWindow(for: vdUUID) {
+            let existingName = windows.first(where: { $0.id == existingWID })?.displayTitle ?? "unknown"
+            let alert = NSAlert()
+            alert.messageText = "Replace existing capture?"
+            alert.informativeText = "Virtual Display '\(vdName)' is currently streaming '\(existingName)'. Replace with '\(info.appName)'?"
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            mgr.stopCapture(windowID: existingWID)
+        }
+
         AppLog.shared.info("WindowRouting: capture '\(info.appName)' (wid=\(info.id)) → vd='\(vdName)' (\(vdUUID.prefix(8))…)", category: "Routing")
 
         // Make sure the target VD is in Signal mode — if it's Blank/Off the user
@@ -463,13 +478,12 @@ final class WindowRoutingWindowController: NSWindowController, NSWindowDelegate 
         captureStatusLabel.textColor = .secondaryLabelColor
         updateActionBars()
 
-        WindowCaptureManager.shared.startCapture(windowID: info.id, vdUUID: vdUUID) { [weak self] error in
+        mgr.startCapture(windowID: info.id, vdUUID: vdUUID) { [weak self] error in
             guard let self else { return }
             if let error {
                 self.captureStatusLabel.stringValue = "✗ \(error.localizedDescription)"
                 self.captureStatusLabel.textColor = .systemRed
             } else {
-                let vdName = VirtualDisplayManager.shared.displays.first { $0.id == vdUUID }?.name ?? vdUUID
                 self.captureStatusLabel.stringValue = "● \(info.appName) → \(vdName)"
                 self.captureStatusLabel.textColor = .labelColor
             }

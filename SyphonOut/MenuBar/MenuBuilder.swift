@@ -145,11 +145,20 @@ enum MenuBuilder {
         if !vdManager.userDisplays.isEmpty {
             vdMenu.addItem(.separator())
             for vd in vdManager.userDisplays {
+                let isActive = WindowCaptureManager.shared.isCapturingVD(vd.id)
                 let item = NSMenuItem(
-                    title: vd.name,
+                    title: isActive ? "● \(vd.name)" : vd.name,
                     action: #selector(StatusBarController.assignPhysical(_:)),
                     keyEquivalent: ""
                 )
+                if isActive {
+                    let mas = NSMutableAttributedString(string: "● \(vd.name)")
+                    mas.addAttribute(.foregroundColor, value: NSColor.systemRed,
+                                     range: NSRange(location: 0, length: 1))
+                    mas.addAttribute(.font, value: NSFont.menuFont(ofSize: 0),
+                                     range: NSRange(location: 0, length: mas.length))
+                    item.attributedTitle = mas
+                }
                 item.representedObject = ["displayId": output.displayId, "vdId": vd.id] as [String: Any]
                 item.target = delegate
                 item.state = (assignedVD?.id == vd.id) ? .on : .off
