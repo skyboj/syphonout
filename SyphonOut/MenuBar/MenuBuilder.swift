@@ -55,6 +55,15 @@ enum MenuBuilder {
         routingItem.target = delegate
         menu.addItem(routingItem)
 
+        let pptToggleItem = NSMenuItem(
+            title: "PowerPoint Soft-Mirror",
+            action: #selector(StatusBarController.togglePPTPreset(_:)),
+            keyEquivalent: ""
+        )
+        pptToggleItem.target = delegate
+        pptToggleItem.state = PowerPointPreset.shared.isActive ? .on : .off
+        menu.addItem(pptToggleItem)
+
         let logItem = NSMenuItem(
             title: "Show Log…",
             action: #selector(StatusBarController.showLogViewer(_:)),

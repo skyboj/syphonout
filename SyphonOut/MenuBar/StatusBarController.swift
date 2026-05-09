@@ -122,6 +122,16 @@ extension StatusBarController {
     // MARK: Physical output: source (routes through assigned VD)
 
     /// Sets the Syphon source on the VD assigned to the given physical display.
+    @objc func togglePPTPreset(_ sender: NSMenuItem) {
+        PowerPointPreset.shared.toggle()
+        UserDefaults.standard.set(PowerPointPreset.shared.isActive, forKey: "pptPresetEnabled")
+        // Rebuild menu to update checkbox state
+        if let menu = statusItem?.menu {
+            menu.removeAllItems()
+            MenuBuilder.build(menu: menu, outputs: outputs, delegate: self)
+        }
+    }
+
     @objc func setPhysicalSource(_ sender: NSMenuItem) {
         guard let info      = sender.representedObject as? [String: Any],
               let displayId = info["displayId"] as? CGDirectDisplayID,
