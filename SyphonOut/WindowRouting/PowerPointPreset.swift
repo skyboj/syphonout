@@ -74,6 +74,12 @@ final class PowerPointPreset {
         inventory.onUpdate = nil
 
         stopPresenterCapture()
+
+        // Force confidence VD to OFF to clear text overlay,
+        // even if no slideshow was running.
+        if let vdID = confidenceVDID() {
+            VirtualDisplayManager.shared.setMode(vdId: vdID, mode: SYPHON_OUT_MODE_OFF)
+        }
     }
 
     // MARK: - Reconciliation (called on every inventory refresh)
