@@ -20,6 +20,10 @@ final class OutputWindowController {
 
     private(set) var currentMode: SyphonOutMode = SYPHON_OUT_MODE_SIGNAL
 
+    /// Text layer shown on BLANK_BLACK mode ("CONFIDENCE\nMONITOR")
+    private var confidenceTextLayer: CATextLayer?
+    private var modeObserver: NSObjectProtocol?
+
     var isVisible: Bool { window?.isVisible ?? false }
 
     /// True when this display currently carries the macOS menu bar.
@@ -135,11 +139,21 @@ final class OutputWindowController {
         setupWindow()
         setupRustOutput()
         setupDisplayLink()
+        modeObserver = NotificationCenter.default.addObserver(
+            forName: .vdModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateConfidenceOverlay()
+        }
     }
 
     deinit {
         stopDisplayLink()
         syphonout_output_destroy(displayId)
+        if let observer = modeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: - Window
@@ -186,29 +200,60 @@ final class OutputWindowController {
         win.isOpaque = true
         win.ignoresMouseEvents = true
 
-        // CAMetalLayer as the window's content view.
-        // device MUST be set explicitly before syphonout_output_create — otherwise
-        // [CAMetalLayer nextDrawable] returns nil until macOS lazily assigns a GPU,
-        // and the Rust renderer gets null drawables → black output every frame.
-        let layer = CAMetalLayer()
-        layer.device = MTLCreateSystemDefaultDevice()
-        layer.pixelFormat = .bgra8Unorm
-        layer.framebufferOnly = true
-        layer.contentsScale = screen?.backingScaleFactor ?? 1.0
-        layer.drawableSize = CGSize(width: nsRect.width * layer.contentsScale,
-                                    height: nsRect.height * layer.contentsScale)
-
+        // Container view backed by a regular CALayer (root layer).
+        // Both the CAMetalLayer and text CATextLayer are sublayers of this
+        // root layer, which guarantees Core Animation composites them correctly.
         let contentView = NSView(frame: NSRect(origin: .zero, size: nsRect.size))
         contentView.wantsLayer = true
-        contentView.layer = layer
         win.contentView = contentView
+        guard let rootLayer = contentView.layer else { return }
+
+        // CAMetalLayer sublayer — device MUST be set explicitly before
+        // syphonout_output_create otherwise [CAMetalLayer nextDrawable] returns nil
+        // until macOS lazily assigns a GPU, and the Rust renderer gets null
+        // drawables → black output every frame.
+        let metalLayer = CAMetalLayer()
+        metalLayer.device = MTLCreateSystemDefaultDevice()
+        metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.framebufferOnly = true
+        metalLayer.contentsScale = screen?.backingScaleFactor ?? 1.0
+        metalLayer.drawableSize = CGSize(width: nsRect.width * metalLayer.contentsScale,
+                                         height: nsRect.height * metalLayer.contentsScale)
+        metalLayer.frame = rootLayer.bounds
+        metalLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        rootLayer.addSublayer(metalLayer)
+
+        // Confidence monitor text ("CONFIDENCE / MONITOR") — shown as a
+        // CATextLayer sibling of the CAMetalLayer on BLANK_BLACK mode.
+        let fontSize = round(contentView.bounds.height * 0.065)
+        let textLayer = CATextLayer()
+        textLayer.string = "CONFIDENCE\nMONITOR"
+        textLayer.font = NSFont.systemFont(ofSize: fontSize, weight: .light)
+        textLayer.fontSize = fontSize
+        textLayer.foregroundColor = NSColor.gray.cgColor
+        textLayer.alignmentMode = .center
+        textLayer.isWrapped = true
+        textLayer.contentsScale = metalLayer.contentsScale
+        textLayer.isHidden = true
+        textLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+
+        let textH = fontSize * 3.0
+        textLayer.frame = CGRect(
+            x: contentView.bounds.width * 0.075,
+            y: (contentView.bounds.height - textH) / 2,
+            width: contentView.bounds.width * 0.85,
+            height: textH
+        )
+        textLayer.zPosition = 1
+        rootLayer.addSublayer(textLayer)
+        confidenceTextLayer = textLayer
 
         // Window starts hidden — shown only when user assigns a VD to this display.
         // This prevents covering the built-in display with a black overlay by default.
         win.orderOut(nil)
 
         self.window = win
-        self.metalLayer = layer
+        self.metalLayer = metalLayer
     }
 
     /// Show the output window (call when a VD is assigned to this display).
@@ -225,7 +270,21 @@ final class OutputWindowController {
         if displayLink.map({ !CVDisplayLinkIsRunning($0) }) == true {
             CVDisplayLinkStart(displayLink!)
         }
+        updateConfidenceOverlay()
         AppLog.shared.info("showOutput display=\(displayId)", category: "Output")
+    }
+
+    /// Shows or hides the "CONFIDENCE / MONITOR" text depending on the
+    /// assigned VD's current mode and whether the PPT preset is active.
+    private func updateConfidenceOverlay() {
+        guard let textLayer = confidenceTextLayer else { return }
+        let vdm = VirtualDisplayManager.shared
+        guard let vd = vdm.assignedVD(for: displayId) else {
+            textLayer.isHidden = true
+            return
+        }
+        textLayer.isHidden = !(vd.mode == SYPHON_OUT_MODE_BLANK_BLACK
+                               && PowerPointPreset.shared.isActive)
     }
 
     /// Hide the output window (call when the VD assignment is removed).
@@ -251,6 +310,7 @@ final class OutputWindowController {
         currentMode = mode
         syphonout_output_set_mode(displayId, mode)
         AppLog.shared.info("setMode display=\(displayId) → \(modeName(mode))", category: "Output")
+        updateConfidenceOverlay()
 
         // Any mode other than Off should make the output window visible.
         // This handles the case where the window was hidden by hideOutput()

@@ -48,6 +48,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     private var removeMirrorButton: NSButton!
 
     private var displayRefreshTimer: Timer?
+    private var screenChangeObserver: NSObjectProtocol?
 
     // MARK: - Init
 
@@ -76,6 +77,12 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         refreshDisplays()
         startDisplayRefreshTimer()
         updateWatcherStatus()
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refreshDisplays()
+        }
     }
 
     // MARK: - UI
@@ -83,7 +90,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     private func buildUI() {
         guard let contentView = window?.contentView else { return }
 
-        helpLabel = NSTextField(wrappingLabelWithString: "SyphonOut автоматически захватывает Presenter View с MacBook'а и показывает его на дисплее, который вы отметите как «Confidence Monitor». Активируется когда в PowerPoint запущен слайдшоу. Слайдшоу-дисплей вы выбираете в самом PowerPoint (Slide Show → Set Up Show).")
+        helpLabel = NSTextField(wrappingLabelWithString: "SyphonOut automatically captures Presenter View from the MacBook and displays it on the monitor you mark as «Confidence Monitor». Activates when a slideshow is running in PowerPoint. The slideshow display is selected in PowerPoint itself (Slide Show → Set Up Show).")
         helpLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         helpLabel.textColor = .secondaryLabelColor
         helpLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -185,7 +192,8 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
         } else {
             for card in roleCards {
                 let liveName = OutputWindowController.screenName(for: card.displayID)
-                card.updateDisplayName(liveName)
+                let idx = displayIDs.firstIndex(of: card.displayID) ?? 0
+                card.updateDisplayName(liveName, displayIndex: idx)
             }
         }
 
@@ -203,7 +211,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
             $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         })
 
-        for displayID in allIDs {
+        for (index, displayID) in allIDs.enumerated() {
             let unit     = CGDisplayUnitNumber(displayID)
             let isMirror = !activeSet.contains(displayID)
 
@@ -223,6 +231,7 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
             let card = DisplayCard(
                 displayID:    displayID,
+                displayIndex: index,
                 displayName:  name,
                 isMirrored:   isMirror,
                 initialRole:  role
@@ -235,7 +244,10 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
     }
 
     private func defaultRole(for displayID: CGDirectDisplayID, in allIDs: [CGDirectDisplayID]) -> Role {
-        return .notUsed
+        guard let index = allIDs.firstIndex(of: displayID) else { return .notUsed }
+        // Index 0 = built-in (Presenter View), Index 1 = slide show projector,
+        // Index 2+ = available for confidence monitoring.
+        return index >= 2 ? .confidenceMonitor : .notUsed
     }
 
     // MARK: - Display refresh timer
@@ -254,6 +266,10 @@ final class PowerPointSetupWindowController: NSWindowController, NSWindowDelegat
 
     func windowWillClose(_ notification: Notification) {
         stopDisplayRefreshTimer()
+        if let observer = screenChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            screenChangeObserver = nil
+        }
     }
 
     // MARK: - Apply
@@ -378,6 +394,7 @@ final class DisplayCard: NSView {
 
     init(
         displayID:    CGDirectDisplayID,
+        displayIndex: Int,
         displayName:  String,
         isMirrored:   Bool,
         initialRole:  PowerPointSetupWindowController.Role,
@@ -400,7 +417,7 @@ final class DisplayCard: NSView {
         let isMain = (NSScreen.main?.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
         let nameSuffix = isMain ? " (Main)" : isMirrored ? " ⌀" : ""
-        nameLabel = NSTextField(labelWithString: displayName + nameSuffix)
+        nameLabel = NSTextField(labelWithString: "\(displayName) (Index \(displayIndex))\(nameSuffix)")
         nameLabel.font      = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         nameLabel.alignment = .center
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -473,15 +490,15 @@ final class DisplayCard: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Update the visible display name. Called when a previously-unknown name
-    /// becomes available (e.g. via IOKit lookup or NSScreen reattachment).
-    func updateDisplayName(_ newName: String) {
+    /// Update the visible display name + index. Called when a previously-unknown
+    /// name becomes available (e.g. via IOKit lookup or NSScreen reattachment).
+    func updateDisplayName(_ newName: String, displayIndex: Int) {
         guard newName != displayName else { return }
         displayName = newName
         let isMain = (NSScreen.main?.deviceDescription[
             NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == displayID
         let nameSuffix = isMain ? " (Main)" : isMirrored ? " ⌀" : ""
-        nameLabel.stringValue = newName + nameSuffix
+        nameLabel.stringValue = "\(newName) (Index \(displayIndex))\(nameSuffix)"
     }
 
     func refreshSnapshot() {
