@@ -30,9 +30,6 @@ final class PowerPointPreset {
 
     private let inventory  = WindowInventory()
 
-    /// Window ID currently captured for Slide Show. nil = waiting.
-    private var slideShowWindowID: CGWindowID?
-
     /// Built-in display ID currently captured for Presenter View. nil = not started.
     private var presenterDisplayID: CGDirectDisplayID?
 
@@ -49,9 +46,8 @@ final class PowerPointPreset {
         isActive = true
         AppLog.shared.info("PowerPoint preset activated", category: "PPTPreset")
 
-        // Ensure target VDs are in Signal mode so output windows actually show.
-        let vds = VirtualDisplayManager.shared.displays
-        for vd in vds.prefix(2) {
+        // Ensure VDs are in Signal mode so output windows actually show.
+        for vd in VirtualDisplayManager.shared.displays {
             VirtualDisplayManager.shared.setMode(vdId: vd.id, mode: SYPHON_OUT_MODE_SIGNAL)
         }
 
@@ -69,13 +65,7 @@ final class PowerPointPreset {
         inventory.stop()
         inventory.onUpdate = nil
 
-        // Stop window capture for Slide Show.
-        if let id = slideShowWindowID {
-            WindowCaptureManager.shared.stopCapture(windowID: id)
-        }
-        slideShowWindowID = nil
-
-        // Stop display capture for Presenter View.
+        // Stop display capture for Presenter View soft-mirror.
         if let id = presenterDisplayID {
             WindowCaptureManager.shared.stopDisplayCapture(displayID: id)
         }
@@ -85,60 +75,38 @@ final class PowerPointPreset {
     // MARK: - Reconciliation (called on every inventory refresh)
 
     private func reconcile(_ windows: [WindowInfo]) {
-        let vds = VirtualDisplayManager.shared.displays
         let ppt = windows.filter { isPowerPoint($0) }
         let slideShowWindow = ppt.first(where: { isSlideShow($0) })
         let slideshowActive = slideShowWindow != nil
 
-        // Slot 0: capture the Slide Show window into VD[0] (for Syphon/OBS routing).
-        // No window-mover hack — user picks the presentation display directly in PPT.
-        if let vd = vds[safe: 0] {
-            applySlideShow(slideShowWindow: slideShowWindow, vdID: vd.id)
+        // Soft-mirror: capture MacBook display into the VD that is assigned to
+        // an EXTERNAL physical display (≠ built-in).  When slideshow is active,
+        // start the capture; when it ends, stop it so the confidence monitor
+        // returns to its native content.
+        //
+        // We pick the target VD by looking at which non-builtin display has a
+        // VD assigned — that's the confidence monitor.  No need for a fixed
+        // VD[0]/VD[1] index scheme.
+        if slideshowActive, let vdID = confidenceVDID() {
+            applyPresenterCapture(vdID: vdID)
+        } else {
+            stopPresenterCapture()
         }
+    }
 
-        // Slot 1: soft-mirror MacBook → confidence VD ONLY while slideshow is active.
-        // When slideshow ends, stop the capture so the confidence monitor returns
-        // to its native content.
-        if let vd = vds[safe: 1] {
-            if slideshowActive {
-                applyPresenterCapture(vdID: vd.id)
-            } else {
-                stopPresenterCapture()
+    /// Returns the UUID of the VD assigned to the first external (non-builtin)
+    /// display.  This is the VD whose output window will become our soft-mirror
+    /// target for Presenter View.
+    private func confidenceVDID() -> String? {
+        for (displayID, vdUUID) in VirtualDisplayManager.shared.assignments {
+            if CGDisplayIsBuiltin(displayID) == 0 {
+                return vdUUID
             }
         }
+        return nil
     }
 
     // MARK: - Slide Show slot
-
-    private func applySlideShow(slideShowWindow: WindowInfo?, vdID: String) {
-        guard let window = slideShowWindow else {
-            if let id = slideShowWindowID {
-                AppLog.shared.info("PPT preset: Slide Show window gone — stopping capture", category: "PPTPreset")
-                WindowCaptureManager.shared.stopCapture(windowID: id)
-                slideShowWindowID = nil
-            }
-            return
-        }
-
-        // Already handled this window.
-        guard window.id != slideShowWindowID else { return }
-
-        // If we were tracking a different window, stop that capture first.
-        if let oldID = slideShowWindowID, oldID != window.id {
-            WindowCaptureManager.shared.stopCapture(windowID: oldID)
-        }
-
-        AppLog.shared.info("PPT preset: found Slide Show (wid=\(window.id)) → VD \(vdID)", category: "PPTPreset")
-        slideShowWindowID = window.id
-
-        // Capture window to VD[0] for Syphon/OBS routing.
-        WindowCaptureManager.shared.startCapture(windowID: window.id, vdUUID: vdID) { [weak self] error in
-            if let error {
-                AppLog.shared.error("PPT preset: Slide Show capture failed: \(error.localizedDescription)", category: "PPTPreset")
-                self?.slideShowWindowID = nil   // allow retry on next reconcile
-            }
-        }
-    }
 
     // MARK: - Presenter View slot (soft-mirror via display capture)
 
