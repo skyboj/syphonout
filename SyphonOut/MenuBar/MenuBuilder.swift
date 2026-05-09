@@ -130,21 +130,61 @@ enum MenuBuilder {
         let thumbItem = makeDisplayThumbnailItem(for: output)
         menu.addItem(thumbItem)
 
-        // ── Source submenu ─────────────────────────────────────────────────
-        if let vd = assignedVD {
-            // Source is selected against the assigned VD
-            let sourceMenu = NSMenu()
-            let noneItem = NSMenuItem(
-                title: "None",
-                action: #selector(StatusBarController.setPhysicalSource(_:)),
-                keyEquivalent: ""
-            )
-            noneItem.representedObject = ["displayId": output.displayId, "uuid": ""] as [String: Any]
-            noneItem.target = delegate
-            noneItem.state = (vd.sourceUUID == nil) ? .on : .off
-            sourceMenu.addItem(noneItem)
-            if !servers.isEmpty { sourceMenu.addItem(.separator()) }
+        // ── Virtual Display submenu (always present) ──────────────────────
+        let vdMenu = NSMenu()
+        let noneItem = NSMenuItem(
+            title: "None",
+            action: #selector(StatusBarController.assignPhysical(_:)),
+            keyEquivalent: ""
+        )
+        noneItem.representedObject = ["displayId": output.displayId, "vdId": ""] as [String: Any]
+        noneItem.target = delegate
+        noneItem.state = (assignedVD == nil) ? .on : .off
+        vdMenu.addItem(noneItem)
 
+        if !vdManager.userDisplays.isEmpty {
+            vdMenu.addItem(.separator())
+            for vd in vdManager.userDisplays {
+                let item = NSMenuItem(
+                    title: vd.name,
+                    action: #selector(StatusBarController.assignPhysical(_:)),
+                    keyEquivalent: ""
+                )
+                item.representedObject = ["displayId": output.displayId, "vdId": vd.id] as [String: Any]
+                item.target = delegate
+                item.state = (assignedVD?.id == vd.id) ? .on : .off
+                vdMenu.addItem(item)
+            }
+        }
+
+        vdMenu.addItem(.separator())
+        let newVDItem = NSMenuItem(
+            title: "+ New Virtual Display…",
+            action: #selector(StatusBarController.addNewVirtualDisplay(_:)),
+            keyEquivalent: ""
+        )
+        newVDItem.target = delegate
+        vdMenu.addItem(newVDItem)
+
+        let vdItem = NSMenuItem(title: "  Virtual Display ▶", action: nil, keyEquivalent: "")
+        vdItem.submenu = vdMenu
+        menu.addItem(vdItem)
+
+        // ── Syphon Source submenu (always present, disabled if no VD) ────
+        let sourceMenu = NSMenu()
+        let hasVD = assignedVD != nil
+        let noneSourceItem = NSMenuItem(
+            title: "None",
+            action: #selector(StatusBarController.setPhysicalSource(_:)),
+            keyEquivalent: ""
+        )
+        noneSourceItem.representedObject = ["displayId": output.displayId, "uuid": ""] as [String: Any]
+        noneSourceItem.target = delegate
+        noneSourceItem.state = (hasVD && assignedVD?.sourceUUID == nil) ? .on : .off
+        sourceMenu.addItem(noneSourceItem)
+
+        if !servers.isEmpty {
+            sourceMenu.addItem(.separator())
             for server in servers {
                 let displayName = server.appName.isEmpty || server.appName == server.name
                     ? server.name
@@ -156,42 +196,21 @@ enum MenuBuilder {
                 )
                 item.representedObject = ["displayId": output.displayId, "uuid": server.uuid] as [String: Any]
                 item.target = delegate
-                item.state = (vd.sourceUUID == server.uuid) ? .on : .off
+                item.state = (hasVD && assignedVD?.sourceUUID == server.uuid) ? .on : .off
                 sourceMenu.addItem(item)
             }
-
-            let currentSourceName: String = {
-                guard let uuid = vd.sourceUUID else { return "None" }
-                if let s = servers.first(where: { $0.uuid == uuid }) { return s.name }
-                if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
-                return "Syphon (offline)"
-            }()
-            let sourceItem = NSMenuItem(title: "  Source: \(currentSourceName)", action: nil, keyEquivalent: "")
-            sourceItem.submenu = sourceMenu
-            menu.addItem(sourceItem)
-        } else {
-            // No VD assigned — offer to assign one (source = choose VD)
-            let assignMenu = NSMenu()
-            if vdManager.displays.isEmpty {
-                let emptyItem = NSMenuItem(title: "No Virtual Displays", action: nil, keyEquivalent: "")
-                emptyItem.isEnabled = false
-                assignMenu.addItem(emptyItem)
-            } else {
-                for vd in vdManager.displays {
-                    let item = NSMenuItem(
-                        title: vd.name,
-                        action: #selector(StatusBarController.assignPhysical(_:)),
-                        keyEquivalent: ""
-                    )
-                    item.representedObject = ["displayId": output.displayId, "vdId": vd.id] as [String: Any]
-                    item.target = delegate
-                    assignMenu.addItem(item)
-                }
-            }
-            let assignItem = NSMenuItem(title: "  Source: Assign Virtual Display…", action: nil, keyEquivalent: "")
-            assignItem.submenu = assignMenu
-            menu.addItem(assignItem)
         }
+
+        let currentSourceName: String = {
+            guard let vd = assignedVD, let uuid = vd.sourceUUID else { return "None" }
+            if let s = servers.first(where: { $0.uuid == uuid }) { return s.name }
+            if uuid.hasPrefix("solink:") { return "SOLink (offline)" }
+            return "Syphon (offline)"
+        }()
+        let sourceItem = NSMenuItem(title: "  Source: \(currentSourceName)", action: nil, keyEquivalent: "")
+        sourceItem.submenu = sourceMenu
+        sourceItem.isEnabled = hasVD
+        menu.addItem(sourceItem)
 
         // ── Mode submenu ───────────────────────────────────────────────────
         let modeMenu = NSMenu()

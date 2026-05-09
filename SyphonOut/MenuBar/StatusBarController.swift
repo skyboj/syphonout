@@ -193,6 +193,14 @@ extension StatusBarController {
 
     // MARK: Utilities
 
+    @objc func addNewVirtualDisplay(_ sender: NSMenuItem) {
+        VirtualDisplayManager.shared.createDisplay()
+        let wc = VirtualDisplayWindowController.shared
+        wc.window?.makeKeyAndOrderFront(sender)
+        wc.subscribeIfNeeded()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func openVirtualDisplays(_ sender: NSMenuItem) {
         let wc = VirtualDisplayWindowController.shared
         wc.window?.makeKeyAndOrderFront(sender)
