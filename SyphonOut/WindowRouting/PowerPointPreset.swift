@@ -30,8 +30,15 @@ final class PowerPointPreset {
 
     private let inventory  = WindowInventory()
 
-    /// Built-in display ID currently captured for Presenter View. nil = not started.
+    /// Built-in display ID currently captured (display-capture fallback). nil = not started.
     private var presenterDisplayID: CGDirectDisplayID?
+
+    /// Presenter View window ID currently captured (preferred path). nil = not started.
+    private var presenterWindowID: CGWindowID?
+
+    /// VD UUID currently receiving the soft-mirror feed.  Cached so we can
+    /// blank it out cleanly when the slideshow ends.
+    private var activeVDID: String?
 
     private init() {}
 
@@ -65,11 +72,7 @@ final class PowerPointPreset {
         inventory.stop()
         inventory.onUpdate = nil
 
-        // Stop display capture for Presenter View soft-mirror.
-        if let id = presenterDisplayID {
-            WindowCaptureManager.shared.stopDisplayCapture(displayID: id)
-        }
-        presenterDisplayID = nil
+        stopPresenterCapture()
     }
 
     // MARK: - Reconciliation (called on every inventory refresh)
@@ -77,18 +80,14 @@ final class PowerPointPreset {
     private func reconcile(_ windows: [WindowInfo]) {
         let ppt = windows.filter { isPowerPoint($0) }
         let slideShowWindow = ppt.first(where: { isSlideShow($0) })
+        let presenterWindow = ppt.first(where: { isPresenterView($0) })
         let slideshowActive = slideShowWindow != nil
 
-        // Soft-mirror: capture MacBook display into the VD that is assigned to
-        // an EXTERNAL physical display (≠ built-in).  When slideshow is active,
-        // start the capture; when it ends, stop it so the confidence monitor
-        // returns to its native content.
-        //
-        // We pick the target VD by looking at which non-builtin display has a
-        // VD assigned — that's the confidence monitor.  No need for a fixed
-        // VD[0]/VD[1] index scheme.
         if slideshowActive, let vdID = confidenceVDID() {
-            applyPresenterCapture(vdID: vdID)
+            // Prefer capturing the Presenter View WINDOW (clean — no menu bar,
+            // no other windows on MacBook).  Fall back to full display capture
+            // only when PV window isn't found (older PPT, presenter view off, etc.)
+            applyPresenterCapture(vdID: vdID, presenterWindow: presenterWindow)
         } else {
             stopPresenterCapture()
         }
@@ -110,32 +109,60 @@ final class PowerPointPreset {
 
     // MARK: - Presenter View slot (soft-mirror via display capture)
 
-    /// Captures the MacBook's built-in display while a Slide Show is running,
-    /// so the confidence monitor shows a soft-mirror of Presenter View.
-    private func applyPresenterCapture(vdID: String) {
-        guard presenterDisplayID == nil else { return }   // already capturing
-
-        guard let builtinID = builtInDisplayID() else {
-            AppLog.shared.warn("PPT preset: no built-in display found — Presenter View capture skipped", category: "PPTPreset")
+    /// Captures Presenter View into the confidence VD while slideshow is running.
+    /// Prefers window capture (clean — only PV content), falls back to full display
+    /// capture if the PV window can't be found.
+    private func applyPresenterCapture(vdID: String, presenterWindow: WindowInfo?) {
+        // Already capturing for this VD?  Nothing to do.
+        if activeVDID == vdID && (presenterWindowID != nil || presenterDisplayID != nil) {
             return
         }
 
-        AppLog.shared.info("PPT preset: slideshow active → start MacBook display capture (\(builtinID)) → VD \(vdID)", category: "PPTPreset")
-        presenterDisplayID = builtinID
+        // Set VD to Signal mode so output renders frames.
+        VirtualDisplayManager.shared.setMode(vdId: vdID, mode: SYPHON_OUT_MODE_SIGNAL)
 
-        WindowCaptureManager.shared.startDisplayCapture(displayID: builtinID, vdUUID: vdID) { [weak self] error in
-            if let error {
-                AppLog.shared.error("PPT preset: built-in display capture failed: \(error.localizedDescription)", category: "PPTPreset")
-                self?.presenterDisplayID = nil   // allow retry
+        if let pv = presenterWindow {
+            AppLog.shared.info("PPT preset: slideshow active → capture Presenter View window (wid=\(pv.id)) → VD \(vdID)", category: "PPTPreset")
+            presenterWindowID = pv.id
+            activeVDID = vdID
+            WindowCaptureManager.shared.startCapture(windowID: pv.id, vdUUID: vdID) { [weak self] error in
+                if let error {
+                    AppLog.shared.error("PPT preset: PV window capture failed: \(error.localizedDescription)", category: "PPTPreset")
+                    self?.presenterWindowID = nil
+                }
             }
+        } else if let builtinID = builtInDisplayID() {
+            AppLog.shared.info("PPT preset: slideshow active → fallback to MacBook display capture (\(builtinID)) → VD \(vdID)", category: "PPTPreset")
+            presenterDisplayID = builtinID
+            activeVDID = vdID
+            WindowCaptureManager.shared.startDisplayCapture(displayID: builtinID, vdUUID: vdID) { [weak self] error in
+                if let error {
+                    AppLog.shared.error("PPT preset: built-in display capture failed: \(error.localizedDescription)", category: "PPTPreset")
+                    self?.presenterDisplayID = nil
+                }
+            }
+        } else {
+            AppLog.shared.warn("PPT preset: no PV window and no built-in display — soft-mirror skipped", category: "PPTPreset")
         }
     }
 
     private func stopPresenterCapture() {
-        guard let id = presenterDisplayID else { return }
-        AppLog.shared.info("PPT preset: slideshow ended → stop MacBook display capture", category: "PPTPreset")
-        WindowCaptureManager.shared.stopDisplayCapture(displayID: id)
-        presenterDisplayID = nil
+        let hadCapture = presenterWindowID != nil || presenterDisplayID != nil
+        if let id = presenterWindowID {
+            AppLog.shared.info("PPT preset: slideshow ended → stop PV window capture", category: "PPTPreset")
+            WindowCaptureManager.shared.stopCapture(windowID: id)
+            presenterWindowID = nil
+        }
+        if let id = presenterDisplayID {
+            AppLog.shared.info("PPT preset: slideshow ended → stop MacBook display capture", category: "PPTPreset")
+            WindowCaptureManager.shared.stopDisplayCapture(displayID: id)
+            presenterDisplayID = nil
+        }
+        // Blank the VD so the confidence monitor doesn't show a frozen last frame.
+        if hadCapture, let vdID = activeVDID {
+            VirtualDisplayManager.shared.setMode(vdId: vdID, mode: SYPHON_OUT_MODE_BLANK_BLACK)
+        }
+        activeVDID = nil
     }
 
     /// Returns the CGDirectDisplayID of the MacBook's built-in display, if present.
@@ -153,6 +180,10 @@ final class PowerPointPreset {
 
     private func isSlideShow(_ w: WindowInfo) -> Bool {
         w.title.localizedCaseInsensitiveContains("Slide Show")
+    }
+
+    private func isPresenterView(_ w: WindowInfo) -> Bool {
+        w.title.localizedCaseInsensitiveContains("Presenter View")
     }
 }
 
